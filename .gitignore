@@ -1,0 +1,11 @@
+.env
+*_pass
+*.key
+*.pem
+.DS_Store
+handoffs/
+__pycache__/
+*.pyc
+
+# Rotierende Config-Backups (dateiname.bak-s1..s5) — nie versionieren
+*.bak-s*

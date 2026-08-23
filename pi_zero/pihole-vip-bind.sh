@@ -1,0 +1,26 @@
+#!/bin/bash
+# pihole-vip-bind.sh — Binds the VIP as a /32 alias on wlan0.
+#
+# Called at boot by pihole-vip.service.
+# Anti-split-brain: if someone else is already answering on .30,
+# don't bind (protects against double-binding in unexpected states).
+
+set -eu
+
+VIP="<VIP>"
+IFACE="wlan0"
+
+# Already bound?
+if ip addr show dev "$IFACE" 2>/dev/null | grep -q "inet ${VIP}/"; then
+    echo "VIP ${VIP} already bound on ${IFACE}"
+    exit 0
+fi
+
+# Anti-split-brain: is someone else responding?
+if timeout 1 ping -c 1 -W 1 "$VIP" >/dev/null 2>&1; then
+    echo "VIP ${VIP} responds remotely — skip bind" >&2
+    exit 0
+fi
+
+ip addr add "${VIP}/32" dev "$IFACE"
+echo "Bound ${VIP}/32 on ${IFACE}"

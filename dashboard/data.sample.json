@@ -1,0 +1,53 @@
+{
+  "ts": "2026-04-18T18:30:00+02:00",
+  "ts_unix": 1776551400,
+  "collector_age_s": 3,
+  "dnsdist": {
+    "state": "listening",
+    "policy": "firstAvailable",
+    "uptime_s": 44040,
+    "primary": {
+      "state": "up",
+      "rt_ms": 3,
+      "health_ok": 2,
+      "health_fail": 0
+    },
+    "fallback": {
+      "state": "up",
+      "rt_ms": 1,
+      "health_ok": 2,
+      "health_fail": 0
+    }
+  },
+  "monitor": {
+    "role": "normal",
+    "last_takeover_ts": null,
+    "last_recovery_ts": "2026-04-18T14:02:18+02:00"
+  },
+  "bot": {
+    "state": "online",
+    "last_contact_s": 120,
+    "pin_set": true,
+    "cooldown_s": 0,
+    "audit_count_30d": 0,
+    "service": "active"
+  },
+  "primary": {
+    "host": "10.0.0.10:53",
+    "container_state": "running",
+    "container_engine": "OrbStack",
+    "webui_url": "http://10.0.0.10:8094/admin/"
+  },
+  "fallback": {
+    "host": "127.0.0.1:5353",
+    "ftl_state": "active",
+    "webui_url": "http://10.0.0.20:8089/admin/"
+  },
+  "update": {
+    "last_run_ts": "2026-04-13T04:30:00+02:00",
+    "last_run_duration_s": 14,
+    "next_run_ts": "2026-04-20T04:30:00+02:00",
+    "last_result": "ok",
+    "method": "docker compose pull"
+  }
+}

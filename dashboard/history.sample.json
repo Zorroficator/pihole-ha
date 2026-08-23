@@ -1,0 +1,10 @@
+[
+  {"ts": "2026-04-18T14:02:18+02:00", "type": "recovery", "msg": "primary → up", "delta_s": 28, "src": "dnsdist"},
+  {"ts": "2026-04-18T14:01:50+02:00", "type": "failover", "msg": "primary → down", "src": "health_fail×2"},
+  {"ts": "2026-04-18T09:44:02+02:00", "type": "update", "msg": "container pull ok", "delta_s": 14, "src": "weekly_cron"},
+  {"ts": "2026-04-13T04:30:00+02:00", "type": "update", "msg": "weekly run ok", "delta_s": 12, "src": "weekly_cron"},
+  {"ts": "2026-04-12T22:17:41+02:00", "type": "telegram", "msg": "alert sent · warning", "src": "monitor"},
+  {"ts": "2026-04-12T08:12:05+02:00", "type": "healthcheck", "msg": "boot healthcheck ok", "delta_s": 90, "src": "launchd"},
+  {"ts": "2026-04-08T03:11:29+02:00", "type": "reboot", "msg": "server manual reboot", "src": "telegram_bot"},
+  {"ts": "2026-04-06T04:30:00+02:00", "type": "update", "msg": "weekly run ok", "delta_s": 11, "src": "weekly_cron"}
+]

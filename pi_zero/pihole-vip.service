@@ -1,0 +1,14 @@
+[Unit]
+Description=Pi-hole VIP <VIP> binding on wlan0
+After=network-online.target
+Wants=network-online.target
+Before=dnsdist.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/pihole-vip-bind.sh
+ExecStop=/sbin/ip addr del <VIP>/32 dev wlan0
+
+[Install]
+WantedBy=multi-user.target

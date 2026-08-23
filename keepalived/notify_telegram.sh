@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# keepalived VRRP state-change notifier -> Telegram (debounced)
+# Called via keepalived: notify_master/backup/fault "/etc/keepalived/notify_telegram.sh <STATE>"
+#
+# Deploy target: /etc/keepalived/notify_telegram.sh (0700 root:root) identical
+# on BOTH nodes — dns-ha (VM on the server) and Pi Zero.
+# Token/chat are sourced from /etc/telegram-notify.conf (600 root:root),
+# they are NOT in this script.
+#
+# Short flaps (e.g. systemd re-exec during the daily auto-update) are
+# suppressed: after DEBOUNCE seconds, the ACTUAL state is re-determined based
+# on VIP presence and only reported if it has genuinely changed compared to
+# the last notification. Real failovers (node stays gone) outlast the
+# debounce and are reported.
+set -euo pipefail
+
+CONF=/etc/telegram-notify.conf
+VIP=<VIP>
+DEBOUNCE=60
+LAST=/run/keepalived_last_notified_state
+LOCK=/run/keepalived_notify.lock
+
+# Actual state = does this node hold the VIP? (node-neutral)
+actual_state() {
+  if ip -4 addr show 2>/dev/null | grep -q "$VIP"; then echo MASTER; else echo BACKUP; fi
+}
+
+# Node -> hardware host / management IP (dns-ha is a VM on the server)
+hw_host() { case "$1" in dns-ha) echo "the server host" ;; *) echo "the Pi Zero host" ;; esac; }
+node_ip() { case "$1" in dns-ha) echo <DNS_HA_VM_IP> ;; *) echo <PIZERO_IP> ;; esac; }
+
+send() {
+  local STATE="$1" HOST SELF_HW SELF_IP PEER_NODE PEER_HW PEER_IP TEXT
+  [ -r "$CONF" ] || return 0
+  # shellcheck disable=SC1090
+  . "$CONF"
+  [ -n "${TELEGRAM_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || return 0
+  HOST="$(hostname)"
+  SELF_HW="$(hw_host "$HOST")"
+  SELF_IP="$(node_ip "$HOST")"
+  if [ "$HOST" = dns-ha ]; then PEER_NODE="Pi Zero"; else PEER_NODE=dns-ha; fi
+  PEER_HW="$(hw_host "$PEER_NODE")"
+  PEER_IP="$(node_ip "$PEER_NODE")"
+  case "$STATE" in
+    MASTER)
+      if [ "$HOST" = dns-ha ]; then
+        TEXT="🟢 DNS-HA: VIP ${VIP} is now running on ${SELF_HW} (${SELF_IP})."
+      else
+        TEXT="🟢 DNS-HA: VIP ${VIP} is now running on ${SELF_HW} (${SELF_IP}). ⚠️ Failover — ${PEER_HW} went down!"
+      fi
+      ;;
+    BACKUP) TEXT="🟡 DNS-HA: ${SELF_HW} is BACKUP — VIP ${VIP} is running on ${PEER_HW} (${PEER_IP})." ;;
+    *)      TEXT="ℹ️ DNS-HA: ${SELF_HW} VRRP status: ${STATE}" ;;
+  esac
+  curl -fsS -m 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "text=${TEXT}" >/dev/null 2>&1 || true
+}
+
+# Debounced + detached, so keepalived doesn't get blocked.
+(
+  sleep "$DEBOUNCE"
+  exec 9>"$LOCK"
+  flock 9
+  cur="$(actual_state)"
+  prev="$(cat "$LAST" 2>/dev/null || echo UNKNOWN)"
+  if [ "$cur" != "$prev" ]; then
+    send "$cur"
+    echo "$cur" >"$LAST"
+  fi
+) >/dev/null 2>&1 &
+
+exit 0

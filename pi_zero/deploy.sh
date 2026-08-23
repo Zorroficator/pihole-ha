@@ -1,0 +1,58 @@
+#!/bin/bash
+# deploy.sh — Rolls out dnsdist + monitor + VIP-bind on the Pi Zero (via Tailscale)
+#
+# Prerequisites on Pi Zero (one-time, manual):
+#   1. A local Telegram notify credential file must exist
+#      (path/format see keepalived/notify_telegram.sh or the respective script).
+#   2. passwordless sudo for 'ip addr add/del' + 'arping' — see section below
+set -euo pipefail
+
+PI_HOST="${PI_HOST:-<PI_USER>@<PIZERO_TAILSCALE_IP>}"
+REMOTE_DIR="/home/dietpi/projects/pihole-ha/pi_zero"
+
+cd "$(dirname "$0")"
+
+echo "→ Creating remote directory on ${PI_HOST}"
+ssh "$PI_HOST" "mkdir -p ${REMOTE_DIR}"
+
+echo "→ Copying files over"
+scp dnsdist.conf \
+    monitor_config.toml \
+    pihole_monitor.py \
+    pihole-monitor.service \
+    pihole-vip-bind.sh \
+    pihole-vip.service \
+    pihole_maintenance.sh \
+    "${PI_HOST}:${REMOTE_DIR}/"
+
+echo "→ Installing dnsdist.conf"
+ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/dnsdist.conf /etc/dnsdist/dnsdist.conf"
+
+echo "→ Installing VIP bind script"
+ssh "$PI_HOST" "sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole-vip-bind.sh /usr/local/bin/pihole-vip-bind.sh"
+
+echo "→ Installing systemd system units (VIP bind + monitor)"
+ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-vip.service /etc/systemd/system/pihole-vip.service && \
+                 sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-monitor.service /etc/systemd/system/pihole-monitor.service && \
+                 sudo systemctl daemon-reload"
+
+echo
+echo "===== NEXT STEPS (manual) ====="
+echo
+echo "1. Passwordless sudo for 'ip addr' + 'arping':"
+echo "   ssh ${PI_HOST}"
+echo "   sudo visudo -f /etc/sudoers.d/pihole-failover"
+echo "   → <PI_USER> ALL=(root) NOPASSWD: /sbin/ip addr add <VIP>/32 dev wlan0, /sbin/ip addr del <VIP>/32 dev wlan0, /usr/bin/arping -U -c 1 -I wlan0 <VIP>"
+echo
+echo "2. Set up weekly maintenance (Pi-hole update + gravity):"
+echo "   ssh ${PI_HOST}"
+echo "   sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole_maintenance.sh /etc/cron.weekly/pihole-maintenance"
+echo "   # NO .sh in the target — run-parts ignores the file otherwise"
+echo
+echo "3. Enable + start VIP bind + dnsdist + monitor:"
+echo "   ssh ${PI_HOST} 'sudo systemctl enable --now pihole-vip'"
+echo "   ssh ${PI_HOST} 'sudo systemctl enable --now dnsdist'"
+echo "   ssh ${PI_HOST} 'sudo systemctl enable --now pihole-monitor'"
+echo
+echo "4. Watch logs:"
+echo "   ssh ${PI_HOST} 'sudo journalctl -u pihole-vip -u dnsdist -u pihole-monitor -f'"

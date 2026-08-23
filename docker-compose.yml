@@ -1,0 +1,22 @@
+services:
+  pihole:
+    container_name: pihole-ha
+    image: pihole/pihole:latest
+    hostname: pihole-ha
+    # Note: dnsdist runs on port 53 on the Pi-Zero node (see pi_zero/dnsdist.conf) —
+    # Pi-hole here has to listen on a different port behind it, hence 5301 instead of 53.
+    ports:
+      - "<SERVER_IP>:5301:53/tcp"
+      - "<SERVER_IP>:5301:53/udp"
+      - "<SERVER_IP>:8094:80/tcp"
+    environment:
+      TZ: "Europe/Berlin"
+      FTLCONF_webserver_api_password: "${PIHOLE_API_PASSWORD:?set PIHOLE_API_PASSWORD in .env}"
+      FTLCONF_dns_listeningMode: "local"
+      FTLCONF_dns_upstreams: "1.1.1.1;9.9.9.9"
+    volumes:
+      - ./data/etc-pihole:/etc/pihole
+      - ./data/etc-dnsmasq.d:/etc/dnsmasq.d
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN

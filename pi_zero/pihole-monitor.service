@@ -1,0 +1,13 @@
+[Unit]
+Description=Pi-hole dnsdist backend monitor + Telegram alerts
+After=dnsdist.service
+Wants=dnsdist.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/dietpi/projects/pihole-ha/pi_zero/pihole_monitor.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""
+pihole_monitor.py — dnsdist backend monitor with rich Telegram alerts.
+
+Architecture (option A, 2026-04-18):
+    Clients → VIP <VIP>:53 → dnsdist →
+        [primary]  <SERVER_IP>:5301  (server Pi-hole via OrbStack, compose 5301:53)
+        [fallback] 127.0.0.1:5353       (Pi-hole-FTL local on Pi Zero)
+
+dnsdist handles the failover internally via the firstAvailable policy.
+This monitor polls the dnsdist HTTP API and sends Telegram alerts
+on state changes. It does NOT perform active failover.
+
+Alert logic:
+  - primary down   → warning (server Pi-hole broken, fallback active)
+  - primary up     → info    (recovery, primary active again)
+  - fallback down  → warning (fallback gone — GAP if primary also fails!)
+  - fallback up    → info    (recovery)
+  - ALL down       → debounced (N consecutive polls) + VIP-first gate:
+        * VIP still resolves → warning "redundancy degraded" (DNS functional)
+        * VIP dead           → error   "TOTAL OUTAGE" (incl. recovery instructions)
+
+The VIP-first gate prevents false total-outage alerts: the dnsdist API can
+briefly report both backends "down" (e.g. FTL restart/gravity) while clients
+keep resolving via the VIP. Only when a functional dig @VIP fails is there
+a real total outage. (Pattern analogous to server/pihole_heartbeat.sh.)
+
+State is persisted in ~/data/pihole_failover/monitor_state.json,
+so a service restart doesn't re-trigger the same alerts.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import signal
+import subprocess
+import sys
+import time
+import tomllib
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+try:
+    import mod_telegram
+except ImportError:
+    print("mod_telegram not importable — Telegram alerts disabled", file=sys.stderr)
+    mod_telegram = None  # type: ignore[assignment]
+
+
+CONFIG_PATH = Path(__file__).parent / "monitor_config.toml"
+DEFAULT_STATE_DIR = Path.home() / "data" / "pihole_failover"
+HISTORY_MAX = 200
+# Total alert only after N consecutive polls with both backends down
+# (debounces brief FTL restart/gravity blips).
+TOTAL_DOWN_THRESHOLD = 3
+
+
+# ─────────────────────────── Config & State ──────────────────────────────
+
+
+@dataclass
+class Config:
+    dnsdist_api: str = "http://127.0.0.1:8083/api/v1/servers/localhost"
+    poll_interval_s: int = 30
+    state_dir: Path = DEFAULT_STATE_DIR
+    dashboard_url: str = "http://<SERVER_IP>:8089/pihole/"
+    fritzbox_url: str = "http://fritz.box/"
+    vip: str = "<VIP>"           # VIP for the functional end-to-end check
+    test_domain: str = "cloudflare.com"     # robust, well-reachable test domain
+
+    @classmethod
+    def load(cls, path: Path) -> "Config":
+        if not path.exists():
+            return cls()
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+        m = data.get("monitor", {})
+        return cls(
+            dnsdist_api=m.get("dnsdist_api", cls.dnsdist_api),
+            poll_interval_s=int(m.get("poll_interval_s", cls.poll_interval_s)),
+            state_dir=Path(m.get("state_dir", str(cls.state_dir))).expanduser(),
+            dashboard_url=m.get("dashboard_url", cls.dashboard_url),
+            fritzbox_url=m.get("fritzbox_url", cls.fritzbox_url),
+            vip=m.get("vip", cls.vip),
+            test_domain=m.get("test_domain", cls.test_domain),
+        )
+
+
+@dataclass
+class BackendSnapshot:
+    name: str
+    address: str
+    state: str          # "up" | "down"
+    queries: int
+    latency_ms: float
+    order: int
+
+
+@dataclass
+class MonitorState:
+    primary_up: bool = True
+    fallback_up: bool = True
+    last_alert_total: float = 0.0
+    total_down_streak: int = 0
+    last_primary_down: Optional[str] = None
+    last_fallback_down: Optional[str] = None
+
+    @classmethod
+    def load(cls, path: Path) -> "MonitorState":
+        if not path.exists():
+            return cls()
+        try:
+            return cls(**json.loads(path.read_text()))
+        except (json.JSONDecodeError, TypeError) as e:
+            logging.warning("State file unreadable (%s) — starting fresh", e)
+            return cls()
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.__dict__, indent=2, default=str))
+        tmp.replace(path)
+
+
+# ─────────────────────────── History ────────────────────────────────────
+
+
+def append_history(state_dir: Path, ev_type: str, msg: str, delta_s: float | None = None) -> None:
+    """Appends an event entry to history.jsonl (max HISTORY_MAX lines)."""
+    path = state_dir / "history.jsonl"
+    entry = json.dumps({
+        "ts":      datetime.now(timezone.utc).isoformat(),
+        "type":    ev_type,
+        "msg":     msg,
+        "delta_s": round(delta_s) if delta_s is not None else None,
+        "src":     "monitor",
+    }, ensure_ascii=False)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing = path.read_text().splitlines() if path.exists() else []
+        lines = existing[-(HISTORY_MAX - 1):] + [entry]
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text("\n".join(lines) + "\n")
+        os.replace(tmp, path)
+    except OSError as e:
+        logging.warning("failed to write history.jsonl: %s", e)
+
+
+# ──────────────────────────── dnsdist API ────────────────────────────────
+
+
+def fetch_backends(api_url: str) -> list[BackendSnapshot]:
+    """Calls the dnsdist API and parses backend states."""
+    req = urllib.request.Request(api_url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        data = json.loads(resp.read())
+
+    snaps = []
+    for s in data.get("servers", []):
+        snaps.append(BackendSnapshot(
+            name=s["name"],
+            address=s["address"],
+            state=s["state"],
+            queries=s["queries"],
+            latency_ms=float(s.get("latency", 0)),
+            order=s["order"],
+        ))
+    return snaps
+
+
+def vip_resolves(vip: str, domain: str) -> bool:
+    """Functional end-to-end check: does `dig @VIP domain` resolve an A record?
+
+    Tests exactly what clients experience (regardless of which node holds the VIP).
+    True = DNS functional, even if the dnsdist API reports both backends "down".
+    """
+    try:
+        out = subprocess.run(
+            ["dig", "+short", "+time=3", "+tries=1", f"@{vip}", domain, "A"],
+            capture_output=True, text=True, timeout=8,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        logging.warning("VIP check dig failed (%s) — treated as unresolvable", e)
+        return False
+    for line in out.splitlines():
+        parts = line.strip().split(".")
+        if len(parts) == 4 and all(p.isdigit() for p in parts):
+            return True
+    return False
+
+
+# ─────────────────────────── Telegram-Alerts ─────────────────────────────
+
+
+def _tg(text: str, level: str = "info") -> None:
+    """Telegram wrapper (no-op if mod_telegram is missing)."""
+    if mod_telegram is None:
+        logging.info("[TG %s] %s", level, text.replace("\n", " | "))
+        return
+    try:
+        mod_telegram.send(text, level=level)
+    except Exception:
+        logging.exception("Telegram send failed")
+
+
+def alert_primary_down(snap: BackendSnapshot) -> None:
+    _tg(
+        "⚠️ Server Pi-hole (.21) down.\n"
+        f"dnsdist now routes to the local Pi-hole (Pi Zero).\n"
+        f"Queries/Pi Zero local take over filtering.",
+        level="warning",
+    )
+
+
+def alert_primary_up(snap: BackendSnapshot) -> None:
+    _tg(
+        "✅ Server Pi-hole (.21) back up.\n"
+        f"Primary routing active, latency {snap.latency_ms:.1f} ms.",
+        level="info",
+    )
+
+
+def alert_fallback_down(snap: BackendSnapshot) -> None:
+    _tg(
+        "⚠️ Local Pi-hole (127.0.0.1:5353) on Pi Zero down.\n"
+        "If the server also fails at the same time → no DNS at all!\n"
+        "Check: systemctl status pihole-FTL",
+        level="warning",
+    )
+
+
+def alert_fallback_up(snap: BackendSnapshot) -> None:
+    _tg(
+        "✅ Local Pi-hole back up. Full redundancy restored.",
+        level="info",
+    )
+
+
+def alert_redundancy_degraded(cfg: Config) -> None:
+    _tg(
+        "⚠️ Pi-hole redundancy degraded — DNS keeps working.\n"
+        "\n"
+        "Both dnsdist backends report 'down':\n"
+        "• Server (<SERVER_IP>:5301)\n"
+        "• Local (Pi Zero 127.0.0.1:5353)\n"
+        "\n"
+        f"BUT: VIP {cfg.vip} resolves functionally — clients have DNS.\n"
+        "No urgent action needed; check the backends when you have time.\n"
+        "\n"
+        f"Dashboard: {cfg.dashboard_url}",
+        level="warning",
+    )
+
+
+def alert_total_outage(cfg: Config) -> None:
+    _tg(
+        "🚨 Pi-hole TOTAL OUTAGE — home network has no DNS!\n"
+        "\n"
+        "❌ Server (<SERVER_IP>:5301): down\n"
+        "❌ Local (Pi Zero 127.0.0.1:5353): down\n"
+        f"❌ VIP {cfg.vip}: not resolving\n"
+        "\n"
+        "DNS resolution NOT functional — clients see timeouts.\n"
+        "\n"
+        "RECOVERY:\n"
+        "\n"
+        "1️⃣ Reboot the server via Telegram:\n"
+        "   /reboot_server <PIN>\n"
+        "   (bot asks for a confirmation code)\n"
+        "\n"
+        "2️⃣ If the reboot doesn't help: set FritzBox DNS to .1:\n"
+        f"   {cfg.fritzbox_url}\n"
+        "   Home Network → Network → IPv4 → Local DNS: <ROUTER_IP>\n"
+        "   (works without filtering, but internet comes back)\n"
+        "\n"
+        f"Dashboard: {cfg.dashboard_url}",
+        level="error",
+    )
+
+
+# ─────────────────────────── Main-Loop ───────────────────────────────────
+
+
+_RUNNING = True
+
+
+def _sigterm(signum, frame):  # noqa: ARG001
+    global _RUNNING
+    _RUNNING = False
+    logging.info("SIGTERM/SIGINT received — shutting down cleanly")
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    signal.signal(signal.SIGTERM, _sigterm)
+    signal.signal(signal.SIGINT, _sigterm)
+
+    cfg = Config.load(CONFIG_PATH)
+    state_path  = cfg.state_dir / "monitor_state.json"
+    state = MonitorState.load(state_path)
+    hist_dir = cfg.state_dir
+
+    logging.info(
+        "Monitor starting: API=%s interval=%ds state=%s",
+        cfg.dnsdist_api, cfg.poll_interval_s, state_path,
+    )
+
+    while _RUNNING:
+        try:
+            backends = fetch_backends(cfg.dnsdist_api)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            logging.warning("dnsdist-API unreachable: %s", e)
+            time.sleep(cfg.poll_interval_s)
+            continue
+
+        primary = next((b for b in backends if b.name == "server-pihole"), None)
+        fallback = next((b for b in backends if b.name == "local-pihole"), None)
+
+        if primary is None or fallback is None:
+            logging.error("Backends missing from API response: %s", backends)
+            time.sleep(cfg.poll_interval_s)
+            continue
+
+        primary_up = primary.state == "up"
+        fallback_up = fallback.state == "up"
+
+        # State transitions → alerts
+        if primary_up != state.primary_up:
+            if primary_up:
+                alert_primary_up(primary)
+                delta = (time.time() - time.mktime(time.strptime(state.last_primary_down, "%Y-%m-%d %H:%M:%S"))) if state.last_primary_down else None
+                append_history(hist_dir, "recovery", "Server Pi-hole (.21) back up", delta)
+            else:
+                alert_primary_down(primary)
+                state.last_primary_down = time.strftime("%Y-%m-%d %H:%M:%S")
+                append_history(hist_dir, "failover", "Server Pi-hole (.21) down — fallback active")
+            state.primary_up = primary_up
+
+        if fallback_up != state.fallback_up:
+            if fallback_up:
+                alert_fallback_up(fallback)
+                delta = (time.time() - time.mktime(time.strptime(state.last_fallback_down, "%Y-%m-%d %H:%M:%S"))) if state.last_fallback_down else None
+                append_history(hist_dir, "recovery", "Local Pi-hole back up", delta)
+            else:
+                alert_fallback_down(fallback)
+                state.last_fallback_down = time.strftime("%Y-%m-%d %H:%M:%S")
+                append_history(hist_dir, "warning", "Local Pi-hole (127.0.0.1:5353) down")
+            state.fallback_up = fallback_up
+
+        # Both backends down: debounce, then classify via VIP check.
+        if not primary_up and not fallback_up:
+            state.total_down_streak += 1
+        else:
+            state.total_down_streak = 0
+
+        if state.total_down_streak >= TOTAL_DOWN_THRESHOLD:
+            # Functional end-to-end check: do clients really have no DNS?
+            vip_ok = vip_resolves(cfg.vip, cfg.test_domain)
+            now = time.time()
+            if vip_ok:
+                # API reports both down, but the VIP resolves → only redundancy is gone.
+                if now - state.last_alert_total > 900:
+                    alert_redundancy_degraded(cfg)
+                    state.last_alert_total = now
+                    append_history(hist_dir, "warning",
+                                   "Both backends down per API — VIP resolves (redundancy degraded)")
+            else:
+                # Real total outage: both backends gone AND VIP dead.
+                if now - state.last_alert_total > 900:
+                    alert_total_outage(cfg)
+                    state.last_alert_total = now
+                    append_history(hist_dir, "critical",
+                                   f"TOTAL OUTAGE — both backends down, VIP {cfg.vip} dead "
+                                   f"({state.total_down_streak} consecutive polls)")
+
+        state.save(state_path)
+        time.sleep(cfg.poll_interval_s)
+
+    logging.info("Monitor stopped")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

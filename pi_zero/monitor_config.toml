@@ -1,0 +1,23 @@
+# pihole_monitor.py configuration
+
+[monitor]
+# dnsdist HTTP API endpoint (enabled in dnsdist.conf via webserver())
+dnsdist_api = "http://127.0.0.1:8083/api/v1/servers/localhost"
+
+# Poll frequency in seconds
+poll_interval_s = 15
+
+# State directory (monitor state + history)
+state_dir = "~/data/pihole_failover"
+
+# Dashboard URL for Telegram messages
+dashboard_url = "http://<SERVER_IP>:8089/pihole/"
+
+# FritzBox URL for recovery instructions
+fritzbox_url = "http://fritz.box/"
+
+# VIP + test domain for the functional end-to-end check (VIP-first gate).
+# Before a TOTAL-OUTAGE alert, `dig @vip test_domain` is checked: if the VIP
+# still resolves, DNS is functional → only "redundancy degraded" instead of total outage.
+vip = "<VIP>"
+test_domain = "cloudflare.com"

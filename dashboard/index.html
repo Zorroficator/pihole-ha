@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="de" data-build="" data-hash="">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pi-hole Failover · Dashboard</title>
+  <meta name="description" content="Live-Status des Pi-hole-Failover-Setups (dnsdist auf Pi Zero, Primary on the server, Fallback lokal).">
+  <meta name="theme-color" content="#050810">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <a href="#main-content" class="skip-link" data-i18n="skip_to_main">Zum Inhalt springen</a>
+
+  <div id="bg-oval" aria-hidden="true"></div>
+  <div id="bg-grid" aria-hidden="true"></div>
+
+  <div class="lang-bar" role="group" aria-label="Sprache">
+    <button class="lang-btn is-active" id="btn-de" type="button" data-lang="de" aria-pressed="true">DE</button>
+    <span class="lang-sep" aria-hidden="true">|</span>
+    <button class="lang-btn" id="btn-en" type="button" data-lang="en" aria-pressed="false">EN</button>
+  </div>
+
+  <div id="statusbar" role="status" aria-live="polite">
+    <div id="sb-title">
+      <h1 data-i18n="app_title">Pi-hole Failover</h1>
+      <div class="sb-sub" data-i18n="app_sub">dnsdist · Failover · Live</div>
+    </div>
+
+    <div class="sb-item" id="sb-pizero">
+      <span class="sb-dot sb-dot--pizero"></span>
+      <span class="sb-val sb-val--pizero" data-i18n="sb_pizero">Pi Zero · dnsdist</span>
+      <span class="sb-label" id="sb-pizero-state">–</span>
+    </div>
+
+    <div class="sb-item" id="sb-primary">
+      <span class="sb-dot sb-dot--primary"></span>
+      <span class="sb-val sb-val--primary" data-i18n="sb_primary">Primary · Server</span>
+      <span class="sb-label" id="sb-primary-state">–</span>
+    </div>
+
+    <div class="sb-item" id="sb-fallback">
+      <span class="sb-dot sb-dot--fallback"></span>
+      <span class="sb-val sb-val--fallback" data-i18n="sb_fallback">Fallback · Pi Zero FTL</span>
+      <span class="sb-label" id="sb-fallback-state">–</span>
+    </div>
+
+    <div class="sb-item" id="sb-bot">
+      <span class="sb-dot sb-dot--bot"></span>
+      <span class="sb-val sb-val--bot" data-i18n="sb_bot">Telegram Bot</span>
+      <span class="sb-label" id="sb-bot-state">–</span>
+    </div>
+
+    <div class="sb-item" id="sb-update">
+      <span class="sb-dot sb-dot--update"></span>
+      <span class="sb-val sb-val--update" data-i18n="sb_update">Update</span>
+      <span class="sb-label" id="sb-update-state">–</span>
+    </div>
+
+    <div id="pulse-dot" aria-hidden="true"></div>
+  </div>
+
+  <main id="main-content" class="app">
+
+    <section id="hero-status" class="hero-status hero-status--normal" aria-live="polite">
+      <span class="hero-status__dot" aria-hidden="true"></span>
+      <span class="hero-status__text" id="hero-status-text" data-i18n="hero_normal">Normalbetrieb — Primary liefert, Fallback bereit</span>
+    </section>
+
+    <!-- ── FLOW STRIP (vereinfachtes Routing-Diagramm) ── -->
+    <div id="flow-strip">
+      <div class="fn fn--pizero" id="fn-pizero">
+        <span class="fn__dot"></span>
+        <div class="fn__body">
+          <div class="fn__name">Pi Zero · dnsdist</div>
+        </div>
+      </div>
+
+      <div class="fn__edge" aria-hidden="true">
+        <span class="fn__edge-arrow">→</span>
+      </div>
+
+      <div class="fn__destinations">
+        <div class="fn fn--primary" id="fn-primary">
+          <span class="fn__dot"></span>
+          <div class="fn__body">
+            <div class="fn__name" data-i18n="node_primary">Primary · Server</div>
+          </div>
+          <span class="fn__badge" id="fn-primary-badge">–</span>
+        </div>
+        <div class="fn fn--fallback" id="fn-fallback">
+          <span class="fn__dot"></span>
+          <div class="fn__body">
+            <div class="fn__name" data-i18n="node_fallback">Fallback · Pi Zero FTL</div>
+          </div>
+          <span class="fn__badge" id="fn-fallback-badge">–</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RECOVERY SAFETY NET STRIP ── -->
+    <section id="recovery-strip" aria-label="Recovery Safety Net">
+      <div class="recovery-node recovery-node--bot" id="recovery-bot">
+        <div class="recovery-node__dot"></div>
+        <div class="recovery-node__body">
+          <span class="recovery-node__title" data-i18n="sb_bot">Telegram Bot</span>
+          <span class="recovery-node__handle">@your_bot</span>
+          <span class="recovery-node__state" data-i18n="state_online_ready">online · bereit</span>
+        </div>
+        <div class="recovery-node__meta" id="recovery-last-contact">–</div>
+      </div>
+      <div class="recovery-cmd">
+        <span class="recovery-cmd__label" data-i18n="recovery_emergency">Notfall-Reboot</span>
+        <code class="recovery-cmd__code">/reboot_server &lt;PIN&gt;</code>
+      </div>
+    </section>
+
+    <!-- ── CARDS GRID ── -->
+    <h2 class="section-title" id="section-cards">
+      <span data-i18n="section_cards">Komponenten</span>
+    </h2>
+    <div id="cards-grid">
+
+      <article class="flow-card card-client" id="card-clients">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_clients_num">Karte 1</div>
+            <h3 class="flow-card__title" data-i18n="card_clients_title">Clients &amp; DHCP</h3>
+          </div>
+          <span class="flow-card__badge">:53 UDP</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_clients_dns_ip">DNS-IP</dt><dd class="fcr__val accent">&lt;VIP&gt;</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_clients_dhcp_range">DHCP-Range</dt><dd class="fcr__val">.20 – .200</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_clients_router">Router</dt><dd class="fcr__val">FritzBox</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_clients_reservation">Reservation</dt><dd class="fcr__val">pihole-dns-virtual-ip</dd></div>
+        </dl>
+      </article>
+
+      <article class="flow-card card-pizero" id="card-pizero">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_pizero_num">Karte 2</div>
+            <h3 class="flow-card__title" data-i18n="card_pizero_title">Pi Zero · dnsdist</h3>
+          </div>
+          <span class="flow-card__badge" id="card-pizero-badge" data-i18n="badge_listening">LISTENING</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_host">Host</dt><dd class="fcr__val">&lt;PIZERO_IP&gt;</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_vip">VIP-Alias</dt><dd class="fcr__val accent">&lt;VIP&gt;</dd></div>
+          <div class="fcr fcr--hint"><dd class="fcr__hint" data-i18n="hint_pizero_vip">nur DNS :53 · Admin-UI immer auf der Pi-Zero-IP</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_uptime">Uptime</dt><dd class="fcr__val"><span id="v-pizero-uptime">–</span></dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_policy">Policy</dt><dd class="fcr__val">firstAvailable</dd></div>
+        </dl>
+      </article>
+
+      <article class="flow-card card-primary" id="card-primary">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_primary_num">Karte 3</div>
+            <h3 class="flow-card__title" data-i18n="card_primary_title">Primary · Server</h3>
+          </div>
+          <span class="flow-card__badge" id="card-primary-badge"><span data-i18n="badge_up">UP</span> · 3 ms</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_host">Host</dt><dd class="fcr__val">&lt;SERVER_IP&gt;:53</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_weight">Weight</dt><dd class="fcr__val accent">10 · primary</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_health">Health</dt><dd class="fcr__val">2 / 2 ok · 5 s</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_rt">Last RT</dt><dd class="fcr__val"><span id="v-primary-rt">–</span></dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_webui">Web-UI</dt><dd class="fcr__val"><a href="http://&lt;SERVER_IP&gt;:8094/admin/" target="_blank" rel="noopener">:8094/admin</a></dd></div>
+        </dl>
+      </article>
+
+      <article class="flow-card card-fallback" id="card-fallback">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_fallback_num">Karte 4</div>
+            <h3 class="flow-card__title" data-i18n="card_fallback_title">Fallback · Pi Zero FTL</h3>
+          </div>
+          <span class="flow-card__badge" id="card-fallback-badge" data-i18n="badge_standby">STANDBY</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_host">Host</dt><dd class="fcr__val">127.0.0.1:5353</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_weight">Weight</dt><dd class="fcr__val accent">1 · fallback</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_health">Health</dt><dd class="fcr__val">2 / 2 ok · 5 s</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_takeover">Letzter Takeover</dt><dd class="fcr__val"><span id="v-fallback-takeover" data-i18n="never">nie</span></dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_webui">Web-UI</dt><dd class="fcr__val"><a href="http://&lt;PIZERO_IP&gt;:8089/admin/" target="_blank" rel="noopener">:8089/admin</a></dd></div>
+        </dl>
+      </article>
+
+      <article class="flow-card card-bot" id="card-bot">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_bot_num">Karte 5</div>
+            <h3 class="flow-card__title" data-i18n="card_bot_title">Reboot-Absicherung · Telegram-Bot</h3>
+          </div>
+          <span class="flow-card__badge" id="card-bot-badge" data-i18n="badge_online">ONLINE</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_bot_handle">Bot</dt><dd class="fcr__val accent">@your_bot</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_bot_service">Dienst</dt><dd class="fcr__val"><span data-i18n="state_active">aktiv</span> · systemd</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_bot_contact">Letzter Kontakt</dt><dd class="fcr__val" id="v-bot-contact">–</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_bot_audit">Audit-Zähler</dt><dd class="fcr__val" id="v-bot-audit">–</dd></div>
+        </dl>
+      </article>
+
+      <article class="flow-card card-update" id="card-update">
+        <header class="flow-card__header">
+          <div>
+            <div class="flow-card__num" data-i18n="card_update_num">Karte 6</div>
+            <h3 class="flow-card__title" data-i18n="card_update_title">Wöchentliches Update</h3>
+          </div>
+          <span class="flow-card__badge" id="card-update-badge" data-i18n="badge_ok">OK</span>
+        </header>
+        <dl class="flow-card__rows">
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_update_last">Letzter Lauf</dt><dd class="fcr__val" id="v-update-last">–</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_update_method">Methode</dt><dd class="fcr__val">docker compose pull</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_update_alert">Alert</dt><dd class="fcr__val" data-i18n="state_fail_only">nur Fehler-Telegram</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_update_next">Nächster Lauf</dt><dd class="fcr__val" id="v-update-next">–</dd></div>
+        </dl>
+      </article>
+
+    </div>
+
+    <!-- ── EVENT TIMELINE ── -->
+    <h2 class="section-title" id="section-events">
+      <span data-i18n="section_events">Ereignisse</span>
+    </h2>
+    <section id="events-timeline" aria-live="polite">
+      <div class="events-empty" id="events-empty" data-i18n="events_empty">Noch keine Ereignisse — System läuft frisch.</div>
+      <ol class="events-list" id="events-list" hidden></ol>
+    </section>
+
+  </main>
+
+  <footer class="site-footer" id="site-footer">
+    <span>© 2026</span>
+    <span class="site-footer__sep">·</span>
+    <a href="https://github.com/Zorroficator/pihole-ha" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
