@@ -128,9 +128,12 @@ Setup: `pi_zero/deploy.sh`. Status/health checks of the dnsdist backends: `pi_ze
 
 The optional Telegram bot used for emergency reboots is deliberately scoped down: access is limited to a dedicated SSH key plus a narrow sudoers rule (only the reboot command, no shell). If you'd rather not use it, step 2 of the recovery chain works just as well over plain manual SSH access.
 
+## Demo
+
+Static demo of the dashboard using the bundled sample data (no backend): **[zorroficator.github.io/pihole-ha](https://zorroficator.github.io/pihole-ha/)**
+
 ## Open work
 
-- GitHub Pages demo of the dashboard (static, using the bundled sample data, no backend)
 - Integration as a dedicated panel inside a broader home-network dashboard
 
 ## License

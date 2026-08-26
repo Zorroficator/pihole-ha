@@ -128,9 +128,12 @@ Setup: `pi_zero/deploy.sh`. Status-/Health-Checks der dnsdist-Backends: `pi_zero
 
 Der optionale Telegram-Bot für den Notfall-Reboot hat bewusst eingeschränkte Rechte: Zugriff nur über einen dedizierten SSH-Key und eine eng gefasste Sudoers-Regel (nur der Reboot-Befehl, keine Shell). Wer diesen Weg nicht nutzen möchte, kann Schritt 2 der Recovery-Kette genauso gut per manuellem SSH-Zugriff abbilden.
 
+## Demo
+
+Statische Demo des Dashboards mit den mitgelieferten Sample-Daten (ohne Backend): **[zorroficator.github.io/pihole-ha](https://zorroficator.github.io/pihole-ha/)**
+
 ## Offene Arbeiten
 
-- GitHub-Pages-Demo des Dashboards (statisch, mit den mitgelieferten Sample-Daten, ohne Backend)
 - Integration als eigenes Panel in einem übergeordneten Heimnetz-Dashboard
 
 ## License
