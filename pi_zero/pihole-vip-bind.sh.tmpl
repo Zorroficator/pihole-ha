@@ -8,7 +8,7 @@
 set -eu
 
 VIP="<VIP>"
-IFACE="wlan0"
+IFACE="<IFACE_PI>"
 
 # Already bound?
 if ip addr show dev "$IFACE" 2>/dev/null | grep -q "inet ${VIP}/"; then

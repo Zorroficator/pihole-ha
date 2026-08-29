@@ -19,3 +19,19 @@ dashboard/history.json
 # Env files — keep only the committed template
 .env*
 !.env.example
+
+# Deploy config + render.sh outputs (contain real network addresses / secrets)
+config.env
+/docker-compose.yml
+/deploy_monitoring.sh
+/keepalived/dns-ha.keepalived.conf
+/keepalived/pi-zero.keepalived.conf
+/keepalived/notify_telegram.sh
+/pi_zero/deploy.sh
+/pi_zero/dnsdist.conf
+/pi_zero/monitor_config.toml
+/pi_zero/pihole_monitor.py
+/pi_zero/pihole-vip-bind.sh
+/pi_zero/pihole-vip.service
+/server/dashboard_collector.py
+/server/pihole_heartbeat.sh

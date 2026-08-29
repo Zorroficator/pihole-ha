@@ -20,7 +20,7 @@ vrrp_script chk_dnsdist {
 
 vrrp_instance DNS_VIP {
     state BACKUP
-    interface wlan0
+    interface <IFACE_PI>
     virtual_router_id 50
     priority 100
     advert_int 5
@@ -36,7 +36,7 @@ vrrp_instance DNS_VIP {
         auth_pass <VRRP_AUTH_PASS>
     }
     virtual_ipaddress {
-        <VIP>/32 dev wlan0
+        <VIP>/32 dev <IFACE_PI>
     }
     track_script {
         chk_dnsdist

@@ -42,7 +42,7 @@ echo
 echo "1. Passwordless sudo for 'ip addr' + 'arping':"
 echo "   ssh ${PI_HOST}"
 echo "   sudo visudo -f /etc/sudoers.d/pihole-failover"
-echo "   → <PI_USER> ALL=(root) NOPASSWD: /sbin/ip addr add <VIP>/32 dev wlan0, /sbin/ip addr del <VIP>/32 dev wlan0, /usr/bin/arping -U -c 1 -I wlan0 <VIP>"
+echo "   → <PI_USER> ALL=(root) NOPASSWD: /sbin/ip addr add <VIP>/32 dev <IFACE_PI>, /sbin/ip addr del <VIP>/32 dev <IFACE_PI>, /usr/bin/arping -U -c 1 -I <IFACE_PI> <VIP>"
 echo
 echo "2. Set up weekly maintenance (Pi-hole update + gravity):"
 echo "   ssh ${PI_HOST}"
