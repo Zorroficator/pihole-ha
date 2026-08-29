@@ -18,7 +18,7 @@
 set -u
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-LOG_DIR="/home/dietpi/.pihole-ha/logs"
+LOG_DIR="/var/log/pihole-ha"
 LOG="$LOG_DIR/pihole-maintenance.log"
 TG="/home/dietpi/scripts/telegram_notify.sh"
 mkdir -p "$LOG_DIR"

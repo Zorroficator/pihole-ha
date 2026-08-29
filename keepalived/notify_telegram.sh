@@ -52,9 +52,11 @@ send() {
     BACKUP) TEXT="🟡 DNS-HA: ${SELF_HW} is BACKUP — VIP ${VIP} is running on ${PEER_HW} (${PEER_IP})." ;;
     *)      TEXT="ℹ️ DNS-HA: ${SELF_HW} VRRP status: ${STATE}" ;;
   esac
-  curl -fsS -m 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-    --data-urlencode "text=${TEXT}" >/dev/null 2>&1 || true
+  curl -fsS -m 10 --config - >/dev/null 2>&1 <<CURLCFG || true
+url = "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
+data-urlencode = "chat_id=${TELEGRAM_CHAT_ID}"
+data-urlencode = "text=${TEXT}"
+CURLCFG
 }
 
 # Debounced + detached, so keepalived doesn't get blocked.

@@ -151,6 +151,21 @@ def append_history(state_dir: Path, ev_type: str, msg: str, delta_s: float | Non
         logging.warning("failed to write history.jsonl: %s", e)
 
 
+def _safe_delta(ts: str | None) -> float | None:
+    """Seconds elapsed since timestamp `ts` ("%Y-%m-%d %H:%M:%S"), or None.
+
+    A corrupt state file must not crash the poll loop, so a bad/absent
+    timestamp yields None instead of raising.
+    """
+    if not ts:
+        return None
+    try:
+        return time.time() - time.mktime(time.strptime(ts, "%Y-%m-%d %H:%M:%S"))
+    except (ValueError, OverflowError) as e:
+        logging.warning("ignoring unparseable timestamp %r: %s", ts, e)
+        return None
+
+
 # ──────────────────────────── dnsdist API ────────────────────────────────
 
 
@@ -336,7 +351,7 @@ def main() -> int:
         if primary_up != state.primary_up:
             if primary_up:
                 alert_primary_up(primary)
-                delta = (time.time() - time.mktime(time.strptime(state.last_primary_down, "%Y-%m-%d %H:%M:%S"))) if state.last_primary_down else None
+                delta = _safe_delta(state.last_primary_down)
                 append_history(hist_dir, "recovery", "Server Pi-hole (.21) back up", delta)
             else:
                 alert_primary_down(primary)
@@ -347,7 +362,7 @@ def main() -> int:
         if fallback_up != state.fallback_up:
             if fallback_up:
                 alert_fallback_up(fallback)
-                delta = (time.time() - time.mktime(time.strptime(state.last_fallback_down, "%Y-%m-%d %H:%M:%S"))) if state.last_fallback_down else None
+                delta = _safe_delta(state.last_fallback_down)
                 append_history(hist_dir, "recovery", "Local Pi-hole back up", delta)
             else:
                 alert_fallback_down(fallback)

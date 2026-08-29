@@ -8,6 +8,16 @@ Type=simple
 ExecStart=/usr/bin/python3 /home/dietpi/projects/pihole-ha/pi_zero/pihole_monitor.py
 Restart=on-failure
 RestartSec=10
+# Runs unprivileged as dietpi. state_dir then resolves to /home/dietpi/data/...
+# which is also what server/dashboard_collector.py reads.
+User=dietpi
+Group=dietpi
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+PrivateTmp=yes
+ReadWritePaths=-/home/dietpi/data
 
 [Install]
 WantedBy=default.target
