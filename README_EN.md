@@ -83,24 +83,37 @@ A static status dashboard lives under `dashboard/` (`index.html`, `app.js`, `sty
 - **Data source:** `dashboard/app.js` fetches `data.json` + `history.json`; if those aren't reachable (e.g. no collector running), it automatically falls back to `data.sample.json` / `history.sample.json`. That means the dashboard also runs **without a backend** — e.g. as a plain demo on GitHub Pages, straight out of this repo.
 - **Live operation:** `server/dashboard_collector.py` gathers status over SSH from the Pi Zero (dnsdist API, monitor state, Telegram bot state) plus the local update log, and writes `data.json` + `history.json`. Run it as a cron job/LaunchAgent on the Docker host and serve the files next to `index.html` (e.g. from a web server's document root).
 
-## Replacing placeholders
+## Configuration
 
-The config files in this repo use placeholders instead of real network addresses. Replace them with your own values before deploying — affected files include `keepalived/*.conf`, `pi_zero/monitor_config.toml`, `pi_zero/dnsdist.conf`, `docker-compose.yml`, `server/*.sh` and `pi_zero/*.sh`:
+A single file `config.env` is the source for every deploy value. Workflow:
 
-| Placeholder | Meaning |
+```bash
+cp config.env.example config.env
+$EDITOR config.env
+./render.sh
+```
+
+`render.sh` writes the deploy-ready files next to each `*.tmpl` and aborts as soon as a value is missing. `config.env` and the rendered files are gitignored — only the `*.tmpl` are committed.
+
+The model is two-tier: the config/template files are rendered via `render.sh`; `deploy_monitoring.sh` and `pi_zero/deploy.sh` are orchestrator scripts that read `config.env` directly and call `render.sh` themselves — which is why those two are not `*.tmpl`.
+
+| Variable | Meaning |
 |---|---|
-| `<VIP>` | Virtual IP that floats between the two hosts via VRRP |
-| `<SERVER_IP>` | IP of the Docker host |
-| `<PIZERO_IP>` | IP of the Raspberry Pi Zero 2W |
-| `<PIZERO_TAILSCALE_IP>` | Tailscale IP of the Raspberry Pi Zero 2W (for SSH access from the Docker host) |
-| `<PI_USER>` | SSH login user on the Raspberry Pi Zero 2W (e.g. the DietPi default user) |
-| `<DNS_HA_VM_IP>` | IP of the keepalived node on the Docker host (if it runs inside a VM) |
-| `<ROUTER_IP>` | Router IP used as the last-resort DNS fallback |
-| `<LAN_SUBNET>` | Home network subnet, used for ACLs/firewall rules |
-| `<PIN>` | PIN for the Telegram bot's emergency reboot command (`pi_zero/pihole_monitor.py`) |
-| `<STATE>` | VRRP status parameter that keepalived passes when calling `keepalived/notify_telegram.sh` (not something you replace manually) |
+| `VIP` | Virtual IP that floats between the two hosts via VRRP |
+| `SERVER_IP` | IP of the Docker host |
+| `PIZERO_IP` | IP of the Raspberry Pi Zero 2W |
+| `PIZERO_TAILSCALE_IP` | Tailscale IP of the Pi Zero (for SSH access from the Docker host) |
+| `PI_USER` | SSH login user on the Pi Zero (DietPi default: `dietpi`) |
+| `DNS_HA_VM_IP` | IP of the keepalived MASTER node on the Docker host (bare metal or a VM) |
+| `ROUTER_IP` | Router IP used as the last-resort DNS fallback |
+| `LAN_SUBNET` | Home LAN subnet in CIDR form, for the dnsdist ACL / firewall notes |
+| `VRRP_AUTH_PASS` | VRRP shared secret (keepalived truncates it to 8 chars, sent in cleartext) |
+| `IFACE_PI` | Interface the VIP binds to — Pi Zero side (usually `wlan0`) |
+| `IFACE_VM` | Interface the VIP binds to — MASTER node side |
 
-Easiest way to find them all: `grep -rn '<[A-Z_]*>' .`
+Every key carries a one-line comment in `config.env.example`.
+
+The failover monitor's code and config are installed to root-owned `/usr/local/lib/pihole-ha/` — changing the poll interval, VIP or test domain there needs sudo.
 
 ## Deploy
 
@@ -119,6 +132,8 @@ cd pi_zero && ./deploy.sh
 # for live data, also run server/dashboard_collector.py via cron/LaunchAgent
 # every 60 s (writes data.json + history.json next to index.html)
 ```
+
+`pi_zero/deploy.sh` and `deploy_monitoring.sh` now run `render.sh` themselves — so `config.env` must be filled in first.
 
 ## Runbooks
 

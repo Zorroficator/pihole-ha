@@ -83,24 +83,37 @@ Ein statisches Status-Dashboard liegt unter `dashboard/` (`index.html`, `app.js`
 - **Datenquelle:** `dashboard/app.js` lädt `data.json` + `history.json` per Fetch; sind diese nicht erreichbar (z. B. weil kein Collector läuft), fällt es automatisch auf `data.sample.json` / `history.sample.json` zurück. Damit läuft das Dashboard auch **ohne Backend** — z. B. als reine Demo per GitHub Pages, direkt aus diesem Repo.
 - **Live-Betrieb:** `server/dashboard_collector.py` sammelt Status per SSH vom Pi Zero (dnsdist-API, Monitor-State, Telegram-Bot-State) plus lokal das Update-Log und schreibt `data.json` + `history.json`. Als Cron/LaunchAgent auf dem Docker-Host laufen lassen und die Dateien neben `index.html` bereitstellen (z. B. via Webserver-Rootverzeichnis).
 
-## Platzhalter ersetzen
+## Konfiguration
 
-Die Konfigurationsdateien in diesem Repo enthalten Platzhalter statt echter Netzwerkadressen. Vor dem Deploy müssen sie durch die eigenen Werte ersetzt werden — betroffen sind u. a. `keepalived/*.conf`, `pi_zero/monitor_config.toml`, `pi_zero/dnsdist.conf`, `docker-compose.yml`, `server/*.sh` und `pi_zero/*.sh`:
+Eine einzige Datei `config.env` ist die Quelle aller Deploy-Werte. Ablauf:
 
-| Platzhalter | Bedeutung |
+```bash
+cp config.env.example config.env
+$EDITOR config.env
+./render.sh
+```
+
+`render.sh` schreibt die deploy-fertigen Dateien neben jede `*.tmpl` und bricht ab, sobald ein Wert fehlt. `config.env` und die gerenderten Dateien sind gitignored — im Repo liegen nur die `*.tmpl`.
+
+Das Modell ist zweistufig: Die Config-/Template-Dateien werden über `render.sh` gerendert; `deploy_monitoring.sh` und `pi_zero/deploy.sh` sind Orchestrator-Skripte, die `config.env` direkt einlesen und `render.sh` selbst aufrufen — deshalb sind diese beiden **keine** `*.tmpl`.
+
+| Variable | Bedeutung |
 |---|---|
-| `<VIP>` | Virtuelle IP, die per VRRP zwischen den beiden Hosts floatet |
-| `<SERVER_IP>` | IP des Docker-Hosts |
-| `<PIZERO_IP>` | IP des Raspberry Pi Zero 2W |
-| `<PIZERO_TAILSCALE_IP>` | Tailscale-IP des Raspberry Pi Zero 2W (für SSH-Zugriff vom Docker-Host aus) |
-| `<PI_USER>` | SSH-Login-User auf dem Raspberry Pi Zero 2W (z. B. der DietPi-Standarduser) |
-| `<DNS_HA_VM_IP>` | IP des keepalived-Knotens auf dem Docker-Host (falls dieser in einer VM läuft) |
-| `<ROUTER_IP>` | IP des Routers als DNS-Fallback der letzten Option |
-| `<LAN_SUBNET>` | Heimnetz-Subnetz für ACLs/Firewall-Regeln |
-| `<PIN>` | PIN für den Notfall-Reboot-Befehl des Telegram-Bots (`pi_zero/pihole_monitor.py`) |
-| `<STATE>` | VRRP-Statusparameter, den keepalived beim Aufruf von `keepalived/notify_telegram.sh` übergibt (nicht manuell zu ersetzen) |
+| `VIP` | Virtuelle IP, die per VRRP zwischen den beiden Hosts floatet |
+| `SERVER_IP` | IP des Docker-Hosts |
+| `PIZERO_IP` | IP des Raspberry Pi Zero 2W |
+| `PIZERO_TAILSCALE_IP` | Tailscale-IP des Pi Zero (für SSH-Zugriff vom Docker-Host aus) |
+| `PI_USER` | SSH-Login-User auf dem Pi Zero (DietPi-Standard: `dietpi`) |
+| `DNS_HA_VM_IP` | IP des keepalived-MASTER-Knotens auf dem Docker-Host (bare metal oder VM) |
+| `ROUTER_IP` | IP des Routers als DNS-Fallback der letzten Option |
+| `LAN_SUBNET` | Heimnetz-Subnetz in CIDR-Form für die dnsdist-ACL / Firewall-Notizen |
+| `VRRP_AUTH_PASS` | VRRP-Shared-Secret (keepalived kürzt auf 8 Zeichen, Klartext auf dem Draht) |
+| `IFACE_PI` | Interface, an das die VIP bindet — Pi-Zero-Seite (meist `wlan0`) |
+| `IFACE_VM` | Interface, an das die VIP bindet — MASTER-Knoten-Seite |
 
-Am einfachsten alle Vorkommen im Repo suchen (`grep -rn '<[A-Z_]*>' .`) und gezielt ersetzen.
+Jeder Schlüssel trägt in `config.env.example` einen einzeiligen Kommentar.
+
+Code und Config des Failover-Monitors werden nach `/usr/local/lib/pihole-ha/` (root-owned) installiert — Poll-Intervall, VIP oder Test-Domain dort zu ändern erfordert sudo.
 
 ## Deploy
 
@@ -119,6 +132,8 @@ cd pi_zero && ./deploy.sh
 # für Live-Daten zusätzlich server/dashboard_collector.py per Cron/LaunchAgent
 # alle 60 s laufen lassen (schreibt data.json + history.json neben index.html)
 ```
+
+`pi_zero/deploy.sh` und `deploy_monitoring.sh` rufen `render.sh` inzwischen selbst auf — `config.env` muss also vorher ausgefüllt sein.
 
 ## Runbooks
 

@@ -63,6 +63,8 @@ rendered_files=""
 while IFS= read -r tmpl; do
 	out="${tmpl%.tmpl}"
 	sed -f "$SED_SCRIPT" "$tmpl" >"$out"
+	# sed > out uses the umask; carry the template's execute bit to the output
+	[ -x "$tmpl" ] && chmod +x "$out"
 	rendered_files="$rendered_files $out"
 	count=$((count + 1))
 done <<EOF

@@ -8,9 +8,19 @@
 # crontab; on the server a user LaunchAgent.
 set -euo pipefail
 
-SERVER="${SERVER:-<SERVER_IP>}"
-PIZERO="${PIZERO:-<PIZERO_IP>}"
 cd "$(dirname "$0")"
+ROOT="$(pwd)"
+
+# Orchestrator: reads config.env directly (not a *.tmpl), then renders the
+# config/template files before shipping them.
+if [ ! -f "$ROOT/config.env" ]; then
+  echo "run: cp config.env.example config.env && edit it" >&2; exit 1
+fi
+set -a; . "$ROOT/config.env"; set +a
+./render.sh
+
+SERVER="${SERVER:-$SERVER_IP}"
+PIZERO="${PIZERO:-$PIZERO_IP}"
 
 echo "═══ 1) Pi Zero: pi_health_logger.sh ═══"
 ssh "dietpi@$PIZERO" "mkdir -p ~/scripts ~/data/pi_health"

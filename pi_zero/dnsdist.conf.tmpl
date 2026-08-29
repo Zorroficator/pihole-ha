@@ -55,5 +55,8 @@ setWebserverConfig({
   statsRequireAuthentication = false
 })
 
--- ACL defaults (RFC1918 + CGNAT + loopback) are sufficient for home network + Tailscale
--- adjust setACL({...}) if needed
+-- dnsdist's built-in ACL already covers RFC1918 + CGNAT + loopback, which is
+-- sufficient for a home LAN + Tailscale. To lock it down to just your subnet,
+-- uncomment the next line — note this REPLACES the default entirely, so keep
+-- loopback and add your Tailscale range if anything queries from there:
+-- setACL({"<LAN_SUBNET>", "127.0.0.0/8"})

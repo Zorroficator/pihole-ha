@@ -5,11 +5,12 @@ Wants=dnsdist.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/dietpi/projects/pihole-ha/pi_zero/pihole_monitor.py
+ExecStart=/usr/bin/python3 -B /usr/local/lib/pihole-ha/pihole_monitor.py
 Restart=on-failure
 RestartSec=10
 # Runs unprivileged as dietpi. state_dir then resolves to /home/dietpi/data/...
 # which is also what server/dashboard_collector.py reads.
+# Code + config live in root-owned /usr/local/lib/pihole-ha/ (not dietpi-writable).
 User=dietpi
 Group=dietpi
 NoNewPrivileges=yes

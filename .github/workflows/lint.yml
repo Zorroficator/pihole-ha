@@ -1,4 +1,4 @@
-name: Lint shell scripts
+name: Lint
 
 on:
   push:
@@ -7,15 +7,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  bash-syntax:
+  render-and-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: bash -n on every *.sh
+
+      - name: Render from the example config
+        run: |
+          cp config.env.example config.env
+          ./render.sh
+
+      - name: No unsubstituted tokens in any rendered file
+        run: |
+          # The rendered outputs are the de-suffixed names of the committed
+          # *.tmpl files; render.sh has just written them all.
+          rendered=$(git ls-files '*.tmpl' | sed 's/\.tmpl$//' \
+                     | while read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)
+          if grep -rIn --exclude-dir=.git -E '<[A-Z][A-Z0-9_]*>' $rendered; then
+            echo "::error::unsubstituted <TOKEN> in a rendered file"; exit 1
+          fi
+
+      - name: Rendered shell scripts are executable
         run: |
           fail=0
-          while IFS= read -r -d '' f; do
-            echo "── $f"
-            bash -n "$f" || fail=1
-          done < <(find . -name '*.sh' -not -path './.git/*' -print0)
+          for f in $(git ls-files '*.sh.tmpl' | sed 's/\.tmpl$//'); do
+            [ -x "$f" ] || { echo "::error::$f not executable after render"; fail=1; }
+          done
+          exit $fail
+
+      - name: bash -n on every shell script (rendered + orchestrators + render.sh)
+        run: |
+          fail=0
+          for f in render.sh deploy_monitoring.sh pi_zero/deploy.sh \
+                   $(git ls-files '*.sh.tmpl' | sed 's/\.tmpl$//'); do
+            echo "── $f"; bash -n "$f" || fail=1
+          done
           exit $fail
