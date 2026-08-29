@@ -38,9 +38,15 @@ scp server/pihole_heartbeat.sh server/local.pihole-heartbeat.plist \
 
 echo "→ Installing LaunchAgent (user, no sudo)"
 ssh "$SERVER" '
-  cp ~/projects/pihole-ha/server/local.pihole-heartbeat.plist ~/Library/LaunchAgents/
+  mkdir -p ~/Library/LaunchAgents
+  sed "s|/Users/YOUR_USERNAME|$HOME|g" \
+      ~/projects/pihole-ha/server/local.pihole-heartbeat.plist \
+      > ~/Library/LaunchAgents/local.pihole-heartbeat.plist
   launchctl bootout   gui/$(id -u)/local.pihole-heartbeat 2>/dev/null || true
   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.pihole-heartbeat.plist
+  if grep -q YOUR_USERNAME ~/Library/LaunchAgents/local.pihole-heartbeat.plist; then
+    echo "✗ plist still has YOUR_USERNAME placeholder — aborting" >&2; exit 1
+  fi
   echo "→ Test run:"; bash ~/projects/pihole-ha/server/pihole_heartbeat.sh
   echo "→ Heartbeat log:"; tail -2 ~/data/pihole_heartbeat/heartbeat.log
   echo "→ LaunchAgent:"; launchctl list | grep pihole-heartbeat || true

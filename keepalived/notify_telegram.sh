@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CONF=/etc/telegram-notify.conf
-VIP=<VIP>
+VIP="<VIP>"
 DEBOUNCE=60
 LAST=/run/keepalived_last_notified_state
 LOCK=/run/keepalived_notify.lock
@@ -27,7 +27,7 @@ actual_state() {
 
 # Node -> hardware host / management IP (dns-ha is a VM on the server)
 hw_host() { case "$1" in dns-ha) echo "the server host" ;; *) echo "the Pi Zero host" ;; esac; }
-node_ip() { case "$1" in dns-ha) echo <DNS_HA_VM_IP> ;; *) echo <PIZERO_IP> ;; esac; }
+node_ip() { case "$1" in dns-ha) echo "<DNS_HA_VM_IP>" ;; *) echo "<PIZERO_IP>" ;; esac; }
 
 send() {
   local STATE="$1" HOST SELF_HW SELF_IP PEER_NODE PEER_HW PEER_IP TEXT

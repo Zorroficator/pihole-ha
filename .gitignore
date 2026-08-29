@@ -9,3 +9,13 @@ __pycache__/
 
 # Rotierende Config-Backups (dateiname.bak-s1..s5) — nie versionieren
 *.bak-s*
+
+# Live monitoring data — never commit: would leak the household DNS query log,
+# client IPs, MAC addresses and device names into a public repo.
+data/
+dashboard/data.json
+dashboard/history.json
+
+# Env files — keep only the committed template
+.env*
+!.env.example
