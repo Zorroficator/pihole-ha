@@ -29,6 +29,7 @@
     <div id="sb-title">
       <h1 data-i18n="app_title">Pi-hole Failover</h1>
       <div class="sb-sub" data-i18n="app_sub">dnsdist · Failover · Live</div>
+      <div class="sb-sub" id="demo-badge" data-i18n="demo_data" hidden>Demo data · no live collector</div>
     </div>
 
     <div class="sb-item" id="sb-pizero">
@@ -168,8 +169,8 @@
         </header>
         <dl class="flow-card__rows">
           <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_host">Host</dt><dd class="fcr__val">&lt;SERVER_IP&gt;:53</dd></div>
-          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_weight">Weight</dt><dd class="fcr__val accent">10 · primary</dd></div>
-          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_health">Health</dt><dd class="fcr__val">2 / 2 ok · 5 s</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_weight">Order</dt><dd class="fcr__val accent">order 1 · primary</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_health">Health</dt><dd class="fcr__val">4-fail threshold · 5 s</dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_rt">Last RT</dt><dd class="fcr__val"><span id="v-primary-rt">–</span></dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_primary_webui">Web-UI</dt><dd class="fcr__val"><a href="http://&lt;SERVER_IP&gt;:8094/admin/" target="_blank" rel="noopener">:8094/admin</a></dd></div>
         </dl>
@@ -185,8 +186,8 @@
         </header>
         <dl class="flow-card__rows">
           <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_host">Host</dt><dd class="fcr__val">127.0.0.1:5353</dd></div>
-          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_weight">Weight</dt><dd class="fcr__val accent">1 · fallback</dd></div>
-          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_health">Health</dt><dd class="fcr__val">2 / 2 ok · 5 s</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_weight">Order</dt><dd class="fcr__val accent">order 2 · fallback</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_health">Health</dt><dd class="fcr__val">2-fail threshold · 5 s</dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_takeover">Letzter Takeover</dt><dd class="fcr__val"><span id="v-fallback-takeover" data-i18n="never">nie</span></dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_fallback_webui">Web-UI</dt><dd class="fcr__val"><a href="http://&lt;PIZERO_IP&gt;:8089/admin/" target="_blank" rel="noopener">:8089/admin</a></dd></div>
         </dl>

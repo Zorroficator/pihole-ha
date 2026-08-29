@@ -59,7 +59,7 @@
       hint_pizero_vip:     "nur DNS :53 · Admin-UI immer auf der Pi-Zero-IP",
 
       card_primary_host:      "Host",
-      card_primary_weight:    "Gewicht",
+      card_primary_weight:    "Reihenfolge",
       card_primary_health:    "Health",
       card_primary_container: "Container",
       card_primary_rt:        "Letzte RT",
@@ -67,7 +67,7 @@
       hint_primary_webui:     "zeigt echte Client-Queries",
 
       card_fallback_host:     "Host",
-      card_fallback_weight:   "Gewicht",
+      card_fallback_weight:   "Reihenfolge",
       card_fallback_health:   "Health",
       card_fallback_ftl:      "Pi-hole-FTL",
       card_fallback_takeover: "Letzter Takeover",
@@ -87,8 +87,8 @@
       card_update_next:   "Nächster Lauf",
 
       flow_f1_sub:   "Client-Anfragen",
-      flow_health:   "health-check · 5 s · 2 Fails = down",
-      flow_caption:  "FritzBox-DHCP verteilt DNS <VIP> → Pi Zero dnsdist routet automatisch nach Gewicht + Health",
+      flow_health:   "health-check · 5 s · Primary 4 Fehler = down",
+      flow_caption:  "FritzBox-DHCP verteilt die VIP als DNS → Pi Zero dnsdist routet auf den Primary solange gesund, sonst auf den Fallback",
       node_clients:  "Clients · FritzBox",
       node_primary:  "Primary · Server",
       node_fallback: "Fallback · Pi Zero FTL",
@@ -127,13 +127,17 @@
       // Inline-Status-Worte (Kleinschreibung, werden mitgelokalisiert)
       state_active:    "aktiv",
       state_running:   "läuft",
+      leg_active:      "aktiv",
+      leg_down:        "ausgefallen",
+      leg_standby:     "Bereitschaft",
       state_set:       "gesetzt",
       state_fail_only: "nur Fehler-Telegram",
       never:           "nie",
+      demo_data:       "Demo-Daten · kein Live-Collector",
 
 
       svg_title: "Pi-hole DNS-Failover Architektur",
-      svg_desc:  "Clients schicken DNS-Anfragen an Pi Zero dnsdist (VIP <VIP>). dnsdist routet nach Gewichtung an den Primary Pi-hole auf dem Server (Gewicht 10) oder fällt auf die lokale Pi Zero FTL-Instanz (Gewicht 1) zurück. Health-Check alle 5 Sekunden, 2 Fehlversuche setzen ein Backend auf down.",
+      svg_desc:  "Clients schicken DNS-Anfragen an Pi Zero dnsdist (die VIP). dnsdist nutzt die firstAvailable-Policy: Anfragen gehen an den Primary Pi-hole auf dem Server (Reihenfolge 1), solange dessen Health-Check besteht, sonst an die lokale Pi Zero FTL-Instanz (Reihenfolge 2). Health-Check alle 5 Sekunden; der Primary gilt nach 4 aufeinanderfolgenden Fehlversuchen als down, der Fallback nach 2.",
     },
     en: {
       skip_to_main:    "Skip to main content",
@@ -178,7 +182,7 @@
       hint_pizero_vip:     "DNS :53 only · admin UI always at the Pi Zero IP",
 
       card_primary_host:      "Host",
-      card_primary_weight:    "Weight",
+      card_primary_weight:    "Order",
       card_primary_health:    "Health",
       card_primary_container: "Container",
       card_primary_rt:        "Last RT",
@@ -186,7 +190,7 @@
       hint_primary_webui:     "shows real client queries",
 
       card_fallback_host:     "Host",
-      card_fallback_weight:   "Weight",
+      card_fallback_weight:   "Order",
       card_fallback_health:   "Health",
       card_fallback_ftl:      "Pi-hole FTL",
       card_fallback_takeover: "Last takeover",
@@ -206,8 +210,8 @@
       card_update_next:   "Next run",
 
       flow_f1_sub:   "Client queries",
-      flow_health:   "health-check · 5 s · 2 fails = down",
-      flow_caption:  "FritzBox DHCP pushes DNS <VIP> → Pi Zero dnsdist routes automatically by weight + health",
+      flow_health:   "health-check · 5 s · primary 4 fails = down",
+      flow_caption:  "FritzBox DHCP pushes the VIP as DNS → Pi Zero dnsdist routes to the primary while healthy, else the fallback",
       node_clients:  "Clients · FritzBox",
       node_primary:  "Primary · Server",
       node_fallback: "Fallback · Pi Zero FTL",
@@ -244,13 +248,17 @@
 
       state_active:    "active",
       state_running:   "running",
+      leg_active:      "active",
+      leg_down:        "down",
+      leg_standby:     "standby",
       state_set:       "set",
       state_fail_only: "fail-only telegram",
       never:           "never",
+      demo_data:       "Demo data · no live collector",
 
 
       svg_title: "Pi-hole DNS failover architecture",
-      svg_desc:  "Clients send DNS queries to Pi Zero dnsdist (VIP <VIP>). dnsdist routes by weight to the primary Pi-hole on the server (weight 10) or falls back to the local Pi Zero FTL instance (weight 1). Health-check every 5 seconds; 2 failures mark a backend down.",
+      svg_desc:  "Clients send DNS queries to Pi Zero dnsdist (the VIP). dnsdist uses the firstAvailable policy: it sends queries to the primary Pi-hole on the server (order 1) as long as its health-check passes, and falls back to the local Pi Zero FTL instance (order 2) otherwise. Health-check every 5 seconds; the primary is marked down after 4 consecutive failures, the fallback after 2.",
     },
   };
 
@@ -300,6 +308,11 @@
     });
 
     try { localStorage.setItem(STORAGE_KEY, lang); } catch (_) { /* no-op */ }
+
+    // Live-state elements carry a data-i18n default that the swap above just
+    // reset to the dictionary default. Repaint them from the cached payload so
+    // a language switch mid-failover keeps the real state. No-op before tick().
+    rerenderFromCache();
   }
 
   // Expose for future modules (and manual dev-toggle via console)
@@ -502,6 +515,8 @@
     telegram:    { icon: "✉", label: "TELEGRAM" },
     healthcheck: { icon: "⚕", label: "HEALTHCHECK" },
     reboot:      { icon: "⏻", label: "REBOOT" },
+    warning:     { icon: "⚠", label: "WARNING" },
+    critical:    { icon: "⛔", label: "CRITICAL" },
   };
 
   function fmtEventTime(iso) {
@@ -530,7 +545,9 @@
     const empty = document.getElementById("events-empty");
     if (!list || !empty) return;
 
-    const items = Array.isArray(history) ? history.slice(0, 15) : [];
+    const items = Array.isArray(history)
+      ? [...history].sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15)
+      : [];
     if (items.length === 0) {
       list.hidden = true;
       empty.hidden = false;
@@ -741,6 +758,17 @@
     }
   }
 
+  function rerenderFromCache() {
+    const P = window.PiholeHA || {};
+    if (!P._lastData) return;
+    renderStatusbar(P._lastData);
+    renderCards(P._lastData);
+    applyStateClasses(P._lastData, P._lastStale);
+    renderHeroStatus(P._lastData, P._lastStale);
+    renderRecoveryStrip(P._lastData, P._lastStale);
+    renderEvents(P._lastHistory);
+  }
+
   async function tick() {
     const [dataRes, histRes] = await Promise.all([
       fetchJson(DATA_URL, DATA_FALLBACK),
@@ -754,6 +782,12 @@
     // staleness check would always trip and make the demo look broken.
     const stale = dataRes.isDemo ? false : isStale(data);
     document.documentElement.classList.toggle("is-stale", stale);
+
+    // Demo mode has no live collector — say so, so a green board is not
+    // mistaken for a healthy live system.
+    const demoBadge = document.getElementById("demo-badge");
+    if (demoBadge) demoBadge.hidden = !dataRes.isDemo;
+
     const pulse = document.getElementById("pulse-dot");
     if (pulse) {
       pulse.classList.remove("is-warn", "is-down");
@@ -769,6 +803,7 @@
 
     window.PiholeHA._lastData = data;
     window.PiholeHA._lastHistory = history;
+    window.PiholeHA._lastStale = stale;
   }
 
   tick();
