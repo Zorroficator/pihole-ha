@@ -74,8 +74,8 @@ else
     else pi_state="Pi Zero NOT pingable"; fi
     srv=$(dig +short +time=3 +tries=1 "@$SERVER_PIHOLE" "$TEST_DOMAIN" A 2>/dev/null \
           | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-    if [[ -n "$srv" ]]; then srv_state="server Pi-hole .21 OK"
-    else srv_state="server Pi-hole .21 down"; fi
+    if [[ -n "$srv" ]]; then srv_state="server Pi-hole OK"
+    else srv_state="server Pi-hole down"; fi
     log "FAIL $fails/$FAIL_THRESHOLD — $pi_state; $srv_state"
 
     if (( fails >= FAIL_THRESHOLD )) && [[ "$status" == "up" ]]; then

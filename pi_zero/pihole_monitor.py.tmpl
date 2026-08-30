@@ -225,7 +225,7 @@ def _tg(text: str, level: str = "info") -> None:
 
 def alert_primary_down(snap: BackendSnapshot) -> None:
     _tg(
-        "⚠️ Server Pi-hole (.21) down.\n"
+        "⚠️ Server Pi-hole down.\n"
         f"dnsdist now routes to the local Pi-hole (Pi Zero).\n"
         f"Queries/Pi Zero local take over filtering.",
         level="warning",
@@ -234,7 +234,7 @@ def alert_primary_down(snap: BackendSnapshot) -> None:
 
 def alert_primary_up(snap: BackendSnapshot) -> None:
     _tg(
-        "✅ Server Pi-hole (.21) back up.\n"
+        "✅ Server Pi-hole back up.\n"
         f"Primary routing active, latency {snap.latency_ms:.1f} ms.",
         level="info",
     )
@@ -242,7 +242,7 @@ def alert_primary_up(snap: BackendSnapshot) -> None:
 
 def alert_fallback_down(snap: BackendSnapshot) -> None:
     _tg(
-        "⚠️ Local Pi-hole (127.0.0.1:5353) on Pi Zero down.\n"
+        "⚠️ Local Pi-hole on the Pi Zero down.\n"
         "If the server also fails at the same time → no DNS at all!\n"
         "Check: systemctl status pihole-FTL",
         level="warning",
@@ -261,8 +261,8 @@ def alert_redundancy_degraded(cfg: Config) -> None:
         "⚠️ Pi-hole redundancy degraded — DNS keeps working.\n"
         "\n"
         "Both dnsdist backends report 'down':\n"
-        "• Server (<SERVER_IP>:5301)\n"
-        "• Local (Pi Zero 127.0.0.1:5353)\n"
+        "• Server Pi-hole\n"
+        "• Local Pi-hole on the Pi Zero\n"
         "\n"
         f"BUT: VIP {cfg.vip} resolves functionally — clients have DNS.\n"
         "No urgent action needed; check the backends when you have time.\n"
@@ -276,8 +276,8 @@ def alert_total_outage(cfg: Config) -> None:
     _tg(
         "🚨 Pi-hole TOTAL OUTAGE — home network has no DNS!\n"
         "\n"
-        "❌ Server (<SERVER_IP>:5301): down\n"
-        "❌ Local (Pi Zero 127.0.0.1:5353): down\n"
+        "❌ Server Pi-hole: down\n"
+        "❌ Local Pi-hole on the Pi Zero: down\n"
         f"❌ VIP {cfg.vip}: not resolving\n"
         "\n"
         "DNS resolution NOT functional — clients see timeouts.\n"
@@ -288,7 +288,7 @@ def alert_total_outage(cfg: Config) -> None:
         "   /reboot_server <your-pin>\n"
         "   (bot asks for a confirmation code)\n"
         "\n"
-        "2️⃣ If the reboot doesn't help: set FritzBox DNS to .1:\n"
+        "2️⃣ If the reboot doesn't help: set the FritzBox's upstream DNS to the router's own LAN IP:\n"
         f"   {cfg.fritzbox_url}\n"
         "   Home Network → Network → IPv4 → Local DNS: <ROUTER_IP>\n"
         "   (works without filtering, but internet comes back)\n"
@@ -352,11 +352,11 @@ def main() -> int:
             if primary_up:
                 alert_primary_up(primary)
                 delta = _safe_delta(state.last_primary_down)
-                append_history(hist_dir, "recovery", "Server Pi-hole (.21) back up", delta)
+                append_history(hist_dir, "recovery", "Server Pi-hole back up", delta)
             else:
                 alert_primary_down(primary)
                 state.last_primary_down = time.strftime("%Y-%m-%d %H:%M:%S")
-                append_history(hist_dir, "failover", "Server Pi-hole (.21) down — fallback active")
+                append_history(hist_dir, "failover", "Server Pi-hole down — fallback active")
             state.primary_up = primary_up
 
         if fallback_up != state.fallback_up:
@@ -367,7 +367,7 @@ def main() -> int:
             else:
                 alert_fallback_down(fallback)
                 state.last_fallback_down = time.strftime("%Y-%m-%d %H:%M:%S")
-                append_history(hist_dir, "warning", "Local Pi-hole (127.0.0.1:5353) down")
+                append_history(hist_dir, "warning", "Local Pi-hole on the Pi Zero down")
             state.fallback_up = fallback_up
 
         # Both backends down: debounce, then classify via VIP check.

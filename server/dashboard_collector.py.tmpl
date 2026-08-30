@@ -16,13 +16,16 @@ Data sources:
     - ~/data/pihole-ha/update.log → last update run
 """
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
+
+log = logging.getLogger("dashboard_collector")
 
 PIZERO_TAILSCALE = "<PIZERO_TAILSCALE_IP>"
 SSH_TIMEOUT = 10
@@ -63,25 +66,22 @@ try:
 except Exception as e:
     out["dnsdist"] = {"ok": False, "error": str(e)[:200]}
 
-# dnsdist uptime via systemd
+# dnsdist uptime via systemd monotonic timestamp (timezone-independent):
+# ActiveEnterTimestampMonotonic is microseconds since boot; /proc/uptime's
+# first field is seconds since boot. The difference is the service uptime.
 try:
     r = subprocess.run(
-        ["systemctl", "show", "dnsdist", "--property=ActiveEnterTimestamp"],
+        ["systemctl", "show", "dnsdist", "--property=ActiveEnterTimestampMonotonic"],
         capture_output=True, text=True, timeout=3,
     )
-    raw = r.stdout.strip().split("=", 1)[-1].strip()
-    # Format: "Weekday YYYY-MM-DD HH:MM:SS TZ" (e.g. "Sat 2026-05-02 13:59:26 CEST")
-    parts = raw.split()
-    if len(parts) >= 3:
-        dt = datetime.strptime(f"{parts[1]} {parts[2]}", "%Y-%m-%d %H:%M:%S")
-        tz_offsets = {"UTC": 0, "CET": 1, "CEST": 2}
-        offset_h = tz_offsets.get(parts[3] if len(parts) > 3 else "UTC", 0)
-        tz = timezone(timedelta(hours=offset_h))
-        out["dnsdist_started_ts"] = dt.replace(tzinfo=tz).isoformat()
+    monotonic_us = int(r.stdout.strip().split("=", 1)[-1].strip() or 0)
+    if monotonic_us > 0:
+        boot_s = float(open("/proc/uptime").read().split()[0])
+        out["dnsdist_uptime_s"] = int(boot_s - monotonic_us / 1_000_000)
     else:
-        out["dnsdist_started_ts"] = None
+        out["dnsdist_uptime_s"] = None
 except Exception:
-    out["dnsdist_started_ts"] = None
+    out["dnsdist_uptime_s"] = None
 
 # monitor state
 try:
@@ -145,9 +145,14 @@ def collect_pizero() -> dict | None:
             capture_output=True, text=True, timeout=SSH_TIMEOUT + 5,
         )
         if result.returncode != 0:
+            log.warning(
+                "Pi Zero SSH collection exited %s: %s",
+                result.returncode, (result.stderr or "").strip()[:200],
+            )
             return None
         return json.loads(result.stdout)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        log.warning("Pi Zero SSH collection failed: %s", str(e)[:200])
         return None
 
 
@@ -155,6 +160,11 @@ def collect_pizero() -> dict | None:
 
 def parse_update_log() -> dict:
     if not UPDATE_LOG.exists():
+        log.warning(
+            "update log %s not found — the weekly-update card will stay empty; "
+            "a server-side update log is not produced by this repo",
+            UPDATE_LOG,
+        )
         return {}
     try:
         text = UPDATE_LOG.read_text(errors="replace")
@@ -165,9 +175,10 @@ def parse_update_log() -> dict:
         if not matches:
             return {}
         ts_str, result = matches[-1]
-        dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").astimezone()
         return {"last_run_ts": dt.isoformat(), "last_result": result}
-    except (OSError, ValueError):
+    except (OSError, ValueError) as e:
+        log.warning("failed to parse update log %s: %s", UPDATE_LOG, str(e)[:200])
         return {}
 
 
@@ -176,25 +187,34 @@ def parse_update_log() -> dict:
 def _read_alert() -> dict:
     try:
         return json.loads(ALERT_FILE.read_text())
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
+        return {"down_cycles": 0, "alerted": False}
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("alert state file unreadable, starting fresh: %s", str(e)[:200])
         return {"down_cycles": 0, "alerted": False}
 
 
 def _write_alert(state: dict) -> None:
     try:
         ALERT_FILE.write_text(json.dumps(state))
-    except OSError:
-        pass
+    except OSError as e:
+        log.warning("could not write alert state file: %s", str(e)[:200])
 
 
 def _telegram(level: str, text: str) -> None:
     try:
         subprocess.run([str(TELEGRAM), text, level], capture_output=True, timeout=10)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning("Telegram notify failed: %s", str(e)[:200])
 
 
 def handle_alert(role: str) -> None:
+    # "unknown" means this cycle produced no reliable data (collection failed, or
+    # the API answered but monitor state was missing). Never escalate or clear the
+    # debounce on it — clearing would fire a false "back to normal" all-clear over
+    # a real ongoing outage.
+    if role == "unknown":
+        return
     state = _read_alert()
     if role == "primary_down":
         state["down_cycles"] = state.get("down_cycles", 0) + 1
@@ -255,23 +275,26 @@ def assemble(pizero: dict | None) -> dict:
     now_ts = datetime.now(timezone.utc).isoformat()
 
     # dnsdist
-    dn_raw     = (pizero or {}).get("dnsdist", {})
-    backends   = dn_raw.get("backends", {}) if dn_raw.get("ok") else {}
-    started_ts = (pizero or {}).get("dnsdist_started_ts")
-
-    uptime_s = None
-    if started_ts:
-        try:
-            started  = datetime.fromisoformat(started_ts)
-            uptime_s = int((datetime.now(timezone.utc) - started).total_seconds())
-        except ValueError:
-            pass
+    dn_raw   = (pizero or {}).get("dnsdist", {})
+    backends = dn_raw.get("backends", {}) if dn_raw.get("ok") else {}
+    uptime_s = (pizero or {}).get("dnsdist_uptime_s")
 
     def _rt(b: dict) -> float | None:
         lat = b.get("latency")
         return round(lat, 1) if lat is not None else None
 
-    if dn_raw.get("ok"):
+    if pizero is None:
+        # Collection failed entirely (SSH down, Tailscale down, remote error).
+        # We have no idea what dnsdist is doing — report "unknown", never "down".
+        log.warning(
+            "Pi Zero collection failed — reporting state as unknown, alert state untouched"
+        )
+        dnsdist = {
+            "state": "unknown", "uptime_s": None,
+            "primary":  {"state": "unknown", "rt_ms": None},
+            "fallback": {"state": "unknown", "rt_ms": None},
+        }
+    elif dn_raw.get("ok"):
         prim = backends.get("server-pihole", {})
         fall = backends.get("local-pihole",  {})
         dnsdist = {
@@ -281,6 +304,7 @@ def assemble(pizero: dict | None) -> dict:
             "fallback": {"state": fall.get("state", "down"), "rt_ms": _rt(fall)},
         }
     else:
+        # SSH reached the Pi Zero but its dnsdist API did not answer.
         dnsdist = {
             "state": "down", "uptime_s": None,
             "primary":  {"state": "down", "rt_ms": None},
@@ -311,7 +335,11 @@ def assemble(pizero: dict | None) -> dict:
         "last_duration_s": None,
     }
 
-    handle_alert(role)
+    # Only touch the alert state machine when we actually collected data.
+    # On a collection failure `role` is "unknown"; escalating or clearing the
+    # debounce here would either drop a real alert or fire a false all-clear.
+    if pizero is not None:
+        handle_alert(role)
 
     return {
         "ts":      now_ts,
@@ -325,11 +353,21 @@ def assemble(pizero: dict | None) -> dict:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
     pizero = collect_pizero()
     data   = assemble(pizero)
+    log.info(
+        "collector run complete: dnsdist=%s role=%s",
+        data["dnsdist"]["state"], data["monitor"]["role"],
+    )
 
     tmp = OUTPUT.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))

@@ -22,7 +22,7 @@ A single Pi-hole is a classic single point of failure for DNS on a home network:
 Two HA mechanisms work together:
 
 - **`keepalived`** keeps a virtual IP (`<VIP>`) highly available between the Pi Zero and the Docker host via VRRP. If either node goes down, the other automatically takes over the VIP — clients never notice the node switch itself.
-- **`dnsdist`** runs on both nodes and handles the actual DNS failover behind that VIP, between the primary and fallback Pi-hole: queries go to the primary Pi-hole as long as its health check is green; on failure, dnsdist automatically switches to the fallback Pi-hole.
+- **`dnsdist`** handles the actual DNS failover behind that VIP, between the primary and fallback Pi-hole: queries go to the primary Pi-hole as long as its health check is green; on failure, dnsdist automatically switches to the fallback Pi-hole. This repo contains the Pi Zero's `dnsdist` config; the second node's `dnsdist` config is not included here.
 
 ```
 Clients → Router hands out DNS <VIP>
@@ -30,10 +30,10 @@ Clients → Router hands out DNS <VIP>
           ▼
 Pi Zero (<PIZERO_IP> + <VIP>/32 alias)
   └─ dnsdist :53
-       ├─ primary  → <SERVER_IP>:5301 (Pi-hole in a Docker container, weight 10)
-       └─ fallback → 127.0.0.1:5353 (Pi-hole-FTL local on Pi Zero, weight 1)
+       ├─ primary  → <SERVER_IP>:5301 (Pi-hole in a Docker container, order 1)
+       └─ fallback → 127.0.0.1:5353 (Pi-hole-FTL local on Pi Zero, order 2)
 
-Health check every 5 s · 2 fails → down · policy firstAvailable
+Health check every 5 s · primary marked down after 4 consecutive failures, fallback after 2 · policy firstAvailable
 ```
 
 Note on ports: `dnsdist` needs port 53 on the same host network for itself (it's the actual
@@ -67,7 +67,7 @@ Why the Pi Zero can hold the VIP rather than the Docker host permanently: some D
 
 ## Recovery chain
 
-1. **Automatic:** primary goes down → dnsdist detects it within <15 s → fallback keeps serving → Telegram alert
+1. **Automatic:** primary goes down → dnsdist detects it within ~20 s (4 × 5 s health check; ~10 s for the fallback) → fallback keeps serving → Telegram alert
 2. **Manual (when the Docker host hangs):** trigger a reboot via the Telegram bot or SSH
 3. **Last resort (total Pi Zero failure):** manually switch the router's DNS to `<ROUTER_IP>` (this single point of failure is accepted deliberately)
 
@@ -81,7 +81,8 @@ Why the Pi Zero can hold the VIP rather than the Docker host permanently: some D
 A static status dashboard lives under `dashboard/` (`index.html`, `app.js`, `style.css`). It shows primary/fallback state, health checks, the update cron and the optional Telegram bot as a live view with a DE/EN switcher.
 
 - **Data source:** `dashboard/app.js` fetches `data.json` + `history.json`; if those aren't reachable (e.g. no collector running), it automatically falls back to `data.sample.json` / `history.sample.json`. That means the dashboard also runs **without a backend** — e.g. as a plain demo on GitHub Pages, straight out of this repo.
-- **Live operation:** `server/dashboard_collector.py` gathers status over SSH from the Pi Zero (dnsdist API, monitor state, Telegram bot state) plus the local update log, and writes `data.json` + `history.json`. Run it as a cron job/LaunchAgent on the Docker host and serve the files next to `index.html` (e.g. from a web server's document root).
+- **Live operation:** `server/dashboard_collector.py` gathers status over SSH from the Pi Zero (dnsdist API, monitor state, Telegram bot state), and writes `data.json` + `history.json` to `~/www/dash_pihole/`. Run it as a cron job/LaunchAgent on the Docker host and serve that directory (put `index.html` and the other static files there as well).
+- **Weekly-update card:** it needs a server-side update log that this repo does not currently produce (the weekly maintenance runs on the Pi Zero and writes `/var/log/pihole-ha/pihole-maintenance.log` in a different format), so that card stays empty in a stock deploy.
 
 ## Configuration
 
@@ -118,8 +119,8 @@ The failover monitor's code and config are installed to root-owned `/usr/local/l
 ## Deploy
 
 ```bash
-# Pi-hole on the Docker host
-cd pihole-ha && docker compose up -d
+# from the repo root, on the Docker host
+docker compose up -d
 
 # Pi Zero
 cd pi_zero && ./deploy.sh
@@ -130,7 +131,7 @@ cd pi_zero && ./deploy.sh
 # Dashboard (static files + optional collector) on the Docker host
 # Serve dashboard/*.html, *.js, *.css, *.sample.json from any web server;
 # for live data, also run server/dashboard_collector.py via cron/LaunchAgent
-# every 60 s (writes data.json + history.json next to index.html)
+# every 60 s (writes data.json + history.json to ~/www/dash_pihole/)
 ```
 
 `pi_zero/deploy.sh` and `deploy_monitoring.sh` now run `render.sh` themselves — so `config.env` must be filled in first.

@@ -123,6 +123,7 @@
       badge_offline:   "OFFLINE",
       badge_ok:        "OK",
       badge_warn:      "WARNUNG",
+      badge_unknown:   "UNBEKANNT",
 
       // Inline-Status-Worte (Kleinschreibung, werden mitgelokalisiert)
       state_active:    "aktiv",
@@ -245,6 +246,7 @@
       badge_offline:   "OFFLINE",
       badge_ok:        "OK",
       badge_warn:      "WARN",
+      badge_unknown:   "UNKNOWN",
 
       state_active:    "active",
       state_running:   "running",
@@ -407,18 +409,29 @@
     }
 
     const dn = data.dnsdist || {};
-    setText("#sb-pizero-state", dn.state === "listening" ? t("leg_active") : t("leg_down"));
+    setText(
+      "#sb-pizero-state",
+      dn.state === "listening" ? t("leg_active")
+      : dn.state === "unknown" ? "–"
+      :                          t("leg_down"),
+    );
 
     const prim = (dn.primary || {}).state;
-    setText("#sb-primary-state", prim === "up" ? t("leg_active") : t("leg_down"));
+    setText(
+      "#sb-primary-state",
+      prim === "up"      ? t("leg_active")
+      : prim === "unknown" ? "–"
+      :                     t("leg_down"),
+    );
 
     const fb = (dn.fallback || {}).state;
     const role = (data.monitor || {}).role || "normal";
     const fbLabel =
-      role === "normal"             ? t("leg_standby")
-      : role === "primary_down"     ? t("leg_active")
-      : fb === "up"                 ? t("leg_standby")
-      :                               t("leg_down");
+      fb === "unknown"             ? "–"
+      : role === "normal"          ? t("leg_standby")
+      : role === "primary_down"    ? t("leg_active")
+      : fb === "up"                ? t("leg_standby")
+      :                             t("leg_down");
     setText("#sb-fallback-state", fbLabel);
 
     const ot = data.bot || {};
@@ -438,7 +451,9 @@
     setText("#v-pizero-uptime", fmtDuration(dn.uptime_s));
     setText(
       "#card-pizero-badge",
-      dn.state === "listening" ? t("badge_listening") : t("badge_down"),
+      dn.state === "listening" ? t("badge_listening")
+      : dn.state === "unknown" ? t("badge_unknown")
+      :                          t("badge_down"),
     );
 
     // Card 3: Primary
@@ -447,9 +462,10 @@
     setText("#v-primary-rt", rt);
     const primaryBadge = document.getElementById("card-primary-badge");
     if (primaryBadge) {
-      primaryBadge.textContent = p.state === "up"
-        ? `${t("badge_up")} · ${rt}`
-        : t("badge_down");
+      primaryBadge.textContent =
+        p.state === "up"      ? `${t("badge_up")} · ${rt}`
+        : p.state === "unknown" ? t("badge_unknown")
+        :                       t("badge_down");
     }
 
     // Card 4: Fallback
@@ -458,7 +474,8 @@
     const fbBadge = document.getElementById("card-fallback-badge");
     if (fbBadge) {
       fbBadge.textContent =
-        role === "primary_down" ? t("badge_active")
+        f.state === "unknown"   ? t("badge_unknown")
+        : role === "primary_down" ? t("badge_active")
         : f.state === "up"       ? t("badge_standby")
         :                          t("badge_down");
     }
@@ -482,7 +499,10 @@
     const upd = data.update || {};
     const updBadge = document.getElementById("card-update-badge");
     if (updBadge) {
-      updBadge.textContent = upd.last_result === "ok" ? t("badge_ok") : t("badge_down");
+      updBadge.textContent =
+        upd.last_result === "ok"        ? t("badge_ok")
+        : !upd.last_result || upd.last_result === "unknown" ? t("badge_unknown")
+        :                                 t("badge_down");
     }
     const updRel = fmtRelative(upd.last_run_ts, lang);
     setText("#v-update-last", updRel || "–");
@@ -491,11 +511,15 @@
     const fnPrimaryBadge  = document.getElementById("fn-primary-badge");
     const fnFallbackBadge = document.getElementById("fn-fallback-badge");
     if (fnPrimaryBadge) {
-      fnPrimaryBadge.textContent = p.state === "up" ? `${t("badge_up")} · ${rt}` : t("badge_down");
+      fnPrimaryBadge.textContent =
+        p.state === "up"      ? `${t("badge_up")} · ${rt}`
+        : p.state === "unknown" ? t("badge_unknown")
+        :                       t("badge_down");
     }
     if (fnFallbackBadge) {
       fnFallbackBadge.textContent =
-        role === "primary_down" ? t("badge_active")
+        f.state === "unknown"   ? t("badge_unknown")
+        : role === "primary_down" ? t("badge_active")
         : f.state === "up"       ? t("badge_standby")
         :                          t("badge_down");
     }
@@ -673,6 +697,8 @@
     if (!data || !data.dnsdist) return "unknown";
     const prim = ((data.dnsdist.primary || {}).state || "").toLowerCase();
     const fb   = ((data.dnsdist.fallback || {}).state || "").toLowerCase();
+    // Collection failed: dnsdist state is genuinely unknown, not "down".
+    if (data.dnsdist.state === "unknown" || prim === "unknown" || fb === "unknown") return "unknown";
     if (prim === "up" && fb === "up")     return "normal";
     if (prim !== "up" && fb === "up")     return "primary_down";
     if (prim === "up" && fb !== "up")     return "fallback_down";
@@ -734,7 +760,7 @@
     }
 
     const dn = data.dnsdist || {};
-    if (dn.state && dn.state !== "listening") {
+    if (dn.state && dn.state !== "listening" && dn.state !== "unknown") {
       sbDotPizero && sbDotPizero.classList.add("is-down");
     }
 
@@ -744,7 +770,7 @@
     }
 
     const upd = data.update || {};
-    if (upd.last_result && upd.last_result !== "ok") {
+    if (upd.last_result && upd.last_result !== "ok" && upd.last_result !== "unknown") {
       sbDotUpdate && sbDotUpdate.classList.add("is-warn");
     }
 

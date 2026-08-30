@@ -1,8 +1,8 @@
 #!/bin/bash
-# pihole-vip-bind.sh — Binds the VIP as a /32 alias on wlan0.
+# pihole-vip-bind.sh — Binds the VIP as a /32 alias on <IFACE_PI>.
 #
 # Called at boot by pihole-vip.service.
-# Anti-split-brain: if someone else is already answering on .30,
+# Anti-split-brain: if someone else is already answering on ${VIP},
 # don't bind (protects against double-binding in unexpected states).
 
 set -eu
