@@ -26,6 +26,8 @@ config.env
 /keepalived/dns-ha.keepalived.conf
 /keepalived/pi-zero.keepalived.conf
 /keepalived/notify_telegram.sh
+/keepalived/30-pihole-ha-nonlocal-bind.conf
+/dns_ha/dnsdist.conf
 /pi_zero/dnsdist.conf
 /pi_zero/monitor_config.toml
 /pi_zero/pihole_monitor.py

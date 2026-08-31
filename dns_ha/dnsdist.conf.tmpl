@@ -1,0 +1,69 @@
+-- /etc/dnsdist/dnsdist.conf
+-- Pi-hole failover load-balancer — dns-ha node (VRRP MASTER, Multipass VM on the server host)
+--
+-- This is the MASTER node: in normal operation keepalived keeps the VIP here,
+-- so this dnsdist instance is the one actually answering clients. The Pi Zero
+-- runs an identical dnsdist config and only takes over on dns-ha failure.
+--
+-- Architecture:
+--   Clients → VIP <VIP>:53 → dnsdist →
+--     [primary] <SERVER_IP>:5301  (server Pi-hole via OrbStack, compose 5301:53)
+--     [fallback] 127.0.0.1:5353    (Pi-hole-FTL local on this node)
+--
+-- firstAvailable policy: queries go to primary as long as it's "up" per the health check.
+-- On primary failure (4 check failures at 5 s = 20s) automatic switch to fallback.
+-- Recovery (2 successful checks) switches back to primary.
+--
+-- maxCheckFailures for primary is kept identical to the Pi Zero's config by
+-- design (both nodes must behave the same on failover). The value 4 is sized
+-- for the Pi Zero's WLAN path to <SERVER_IP>:5301 and tolerates its packet
+-- loss; this VM reaches the same backend over a wired link and would not need
+-- it that high, but do NOT lower it here — the two nodes must stay in lockstep.
+
+-- Listening sockets
+addLocal("<VIP>:53",     {reusePort=true})
+addLocal("127.0.0.1:53", {reusePort=true})
+
+-- Backends (order matters for firstAvailable)
+newServer({
+  address          = "<SERVER_IP>:5301",
+  name             = "server-pihole",
+  checkInterval    = 5,
+  rise             = 2,
+  maxCheckFailures = 4,
+  order            = 1
+})
+
+newServer({
+  address          = "127.0.0.1:5353",
+  name             = "local-pihole",
+  checkInterval    = 5,
+  rise             = 2,
+  maxCheckFailures = 2,
+  order            = 2
+})
+
+-- Per-client rate limit: shield the resolver from a single client
+-- (compromised device, retry loop) flooding it. 50 q/s per source IP is far
+-- above any legitimate home client; excess is dropped, not truncated.
+addAction(MaxQPSIPRule(50), DropAction())
+
+setServerPolicy(firstAvailable)
+
+-- Console for live stats (loopback only, unauthenticated is OK because 127.0.0.1)
+-- Enable if debugging is needed:
+-- controlSocket("127.0.0.1:5199")
+
+-- HTTP API for dashboard collector (loopback-only)
+webserver("127.0.0.1:8083")
+setWebserverConfig({
+  apiRequiresAuthentication = false,  -- loopback-only, no risk
+  dashboardRequiresAuthentication = false,
+  statsRequireAuthentication = false
+})
+
+-- dnsdist's built-in ACL already covers RFC1918 + CGNAT + loopback, which is
+-- sufficient for a home LAN + Tailscale. To lock it down to just your subnet,
+-- uncomment the next line — note this REPLACES the default entirely, so keep
+-- loopback and add your Tailscale range if anything queries from there:
+-- setACL({"<LAN_SUBNET>", "127.0.0.0/8"})

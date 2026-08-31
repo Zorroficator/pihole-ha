@@ -1,14 +1,19 @@
 #!/bin/bash
-# deploy.sh — Rolls out dnsdist + monitor + VIP-bind on the Pi Zero (via Tailscale)
+# deploy.sh — Rolls out dnsdist + the keepalived stack + the failover monitor
+# on the Pi Zero (via Tailscale).
+#
+# The Pi Zero is VRRP BACKUP (priority 100): keepalived only hands it the VIP
+# if the dns-ha node fails. keepalived manages the VIP exclusively — there is
+# no separate static-bind service anymore.
 #
 # Prerequisites on Pi Zero (one-time, manual):
-#   1. /etc/telegram-notify.conf must exist (shared with the keepalived
+#   1. dnsdist + keepalived installed (apt).
+#   2. /etc/telegram-notify.conf must exist (shared with the keepalived
 #      notifier), format:
 #          TELEGRAM_TOKEN=123456:AA...
 #          TELEGRAM_CHAT_ID=-1001234567890
 #      The monitor runs as the unprivileged 'dietpi' user, so the file must be
 #      readable by it: either `chmod 644` or `chown root:dietpi && chmod 640`.
-#   2. passwordless sudo for 'ip addr add/del' + 'arping' — see section below
 set -euo pipefail
 
 REMOTE_DIR="/home/dietpi/projects/pihole-ha/pi_zero"
@@ -34,21 +39,28 @@ scp dnsdist.conf \
     monitor_config.toml \
     pihole_monitor.py \
     pihole-monitor.service \
-    pihole-vip-bind.sh \
-    pihole-vip.service \
     pihole_maintenance.sh \
     ../bin/telegram-send.sh \
+    ../keepalived/pi-zero.keepalived.conf \
+    ../keepalived/chk_dnsdist.sh \
+    ../keepalived/notify_telegram.sh \
+    ../keepalived/30-pihole-ha-nonlocal-bind.conf \
     "${PI_HOST}:${REMOTE_DIR}/"
 
 echo "→ Installing dnsdist.conf"
 ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/dnsdist.conf /etc/dnsdist/dnsdist.conf"
 
-echo "→ Installing VIP bind script"
-ssh "$PI_HOST" "sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole-vip-bind.sh /usr/local/bin/pihole-vip-bind.sh"
+echo "→ Installing keepalived stack"
+ssh "$PI_HOST" "sudo install -d -m 755 -o root -g root /etc/keepalived && \
+                 sudo install -m 644 -o root -g root ${REMOTE_DIR}/pi-zero.keepalived.conf /etc/keepalived/keepalived.conf && \
+                 sudo install -m 755 -o root -g root ${REMOTE_DIR}/chk_dnsdist.sh /etc/keepalived/chk_dnsdist.sh && \
+                 sudo install -m 700 -o root -g root ${REMOTE_DIR}/notify_telegram.sh /etc/keepalived/notify_telegram.sh"
 
-echo "→ Installing systemd system units (VIP bind + monitor)"
-ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-vip.service /etc/systemd/system/pihole-vip.service && \
-                 sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-monitor.service /etc/systemd/system/pihole-monitor.service && \
+echo "→ Installing nonlocal-bind sysctl drop-in"
+ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/30-pihole-ha-nonlocal-bind.conf /etc/sysctl.d/30-pihole-ha-nonlocal-bind.conf"
+
+echo "→ Installing systemd system unit (monitor) + monitor code"
+ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-monitor.service /etc/systemd/system/pihole-monitor.service && \
                  sudo install -d -m 755 -o root -g root /usr/local/lib/pihole-ha && \
                  sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole_monitor.py /usr/local/lib/pihole-ha/pihole_monitor.py && \
                  sudo install -m 644 -o root -g root ${REMOTE_DIR}/monitor_config.toml /usr/local/lib/pihole-ha/monitor_config.toml && \
@@ -63,20 +75,25 @@ ssh "$PI_HOST" "rm -f ${REMOTE_DIR}/pihole_monitor.py ${REMOTE_DIR}/monitor_conf
 echo
 echo "===== NEXT STEPS (manual) ====="
 echo
-echo "1. Passwordless sudo for 'ip addr' + 'arping':"
-echo "   ssh ${PI_HOST}"
-echo "   sudo visudo -f /etc/sudoers.d/pihole-failover"
-echo "   → ${PI_USER} ALL=(root) NOPASSWD: /sbin/ip addr add ${VIP}/32 dev ${IFACE_PI}, /sbin/ip addr del ${VIP}/32 dev ${IFACE_PI}, /usr/bin/arping -U -c 1 -I ${IFACE_PI} ${VIP}"
+echo "1. Apply the nonlocal-bind sysctl (lets dnsdist bind ${VIP}:53 while the"
+echo "   node does not hold the VIP):"
+echo "   ssh ${PI_HOST} 'sudo sysctl --system'"
+echo "   ssh ${PI_HOST} \"ss -tulnp | grep ':53'\"   # confirm the bind"
 echo
-echo "2. Set up weekly maintenance (Pi-hole update + gravity):"
+echo "2. Set the real keepalived auth_pass (identical on BOTH nodes) from your"
+echo "   password store — /etc/keepalived/keepalived.conf still carries the"
+echo "   VRRP_AUTH_PASS value from config.env, which is only a placeholder."
+echo "   Also make sure /etc/telegram-notify.conf exists (see header)."
+echo
+echo "3. Set up weekly maintenance (Pi-hole update + gravity):"
 echo "   ssh ${PI_HOST}"
 echo "   sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole_maintenance.sh /etc/cron.weekly/pihole-maintenance"
 echo "   # NO .sh in the target — run-parts ignores the file otherwise"
 echo
-echo "3. Enable + start VIP bind + dnsdist + monitor:"
-echo "   ssh ${PI_HOST} 'sudo systemctl enable --now pihole-vip'"
+echo "4. Enable + start keepalived + dnsdist + monitor:"
+echo "   ssh ${PI_HOST} 'sudo systemctl enable --now keepalived'"
 echo "   ssh ${PI_HOST} 'sudo systemctl enable --now dnsdist'"
 echo "   ssh ${PI_HOST} 'sudo systemctl enable --now pihole-monitor'"
 echo
-echo "4. Watch logs:"
-echo "   ssh ${PI_HOST} 'sudo journalctl -u pihole-vip -u dnsdist -u pihole-monitor -f'"
+echo "5. Watch logs:"
+echo "   ssh ${PI_HOST} 'sudo journalctl -u keepalived -u dnsdist -u pihole-monitor -f'"

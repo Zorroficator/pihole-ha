@@ -7,7 +7,7 @@
 #
 # Source in the repo: pihole-ha/pi_zero/pihole_maintenance.sh
 # Deployment:
-#   scp pi_zero/pihole_maintenance.sh dietpi@<pi>:/tmp/
+#   scp pi_zero/pihole_maintenance.sh <pi-user>@<pi>:/tmp/
 #   sudo install -m 755 -o root -g root /tmp/pihole_maintenance.sh \
 #        /etc/cron.weekly/pihole-maintenance      # NO .sh — run-parts ignores it otherwise
 #

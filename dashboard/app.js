@@ -52,11 +52,12 @@
       card_clients_reservation: "Reservierung",
 
       card_pizero_host:    "Host",
-      card_pizero_vip:     "VIP-Alias",
+      card_pizero_vip:     "VRRP-Rolle",
+      val_pizero_vrrp:     "BACKUP · Prio 100",
       card_pizero_uptime:  "Laufzeit",
       card_pizero_policy:  "Policy",
       card_pizero_systemd: "systemd",
-      hint_pizero_vip:     "nur DNS :53 · Admin-UI immer auf der Pi-Zero-IP",
+      hint_pizero_vip:     "übernimmt die VIP <VIP> nur bei Ausfall der dns-ha-VM · Admin-UI immer auf der Pi-Zero-IP",
 
       card_primary_host:      "Host",
       card_primary_weight:    "Reihenfolge",
@@ -88,7 +89,7 @@
 
       flow_f1_sub:   "Client-Anfragen",
       flow_health:   "health-check · 5 s · Primary 4 Fehler = down",
-      flow_caption:  "FritzBox-DHCP verteilt die VIP als DNS → Pi Zero dnsdist routet auf den Primary solange gesund, sonst auf den Fallback",
+      flow_caption:  "FritzBox-DHCP verteilt die VIP als DNS → dnsdist hinter der VIP (per keepalived normal auf der dns-ha-VM) routet auf den Primary solange gesund, sonst auf den Fallback",
       node_clients:  "Clients · FritzBox",
       node_primary:  "Primary · Server",
       node_fallback: "Fallback · Pi Zero FTL",
@@ -138,7 +139,7 @@
 
 
       svg_title: "Pi-hole DNS-Failover Architektur",
-      svg_desc:  "Clients schicken DNS-Anfragen an Pi Zero dnsdist (die VIP). dnsdist nutzt die firstAvailable-Policy: Anfragen gehen an den Primary Pi-hole auf dem Server (Reihenfolge 1), solange dessen Health-Check besteht, sonst an die lokale Pi Zero FTL-Instanz (Reihenfolge 2). Health-Check alle 5 Sekunden; der Primary gilt nach 4 aufeinanderfolgenden Fehlversuchen als down, der Fallback nach 2.",
+      svg_desc:  "Clients schicken DNS-Anfragen an die VIP; dahinter läuft dnsdist (per keepalived/VRRP normal auf der dns-ha-VM, beim Ausfall auf dem Pi Zero — identische Konfiguration auf beiden Knoten). dnsdist nutzt die firstAvailable-Policy: Anfragen gehen an den Primary Pi-hole auf dem Server (Reihenfolge 1), solange dessen Health-Check besteht, sonst an die lokale Pi Zero FTL-Instanz (Reihenfolge 2). Health-Check alle 5 Sekunden; der Primary gilt nach 4 aufeinanderfolgenden Fehlversuchen als down, der Fallback nach 2.",
     },
     en: {
       skip_to_main:    "Skip to main content",
@@ -176,11 +177,12 @@
       card_clients_reservation: "Reservation",
 
       card_pizero_host:    "Host",
-      card_pizero_vip:     "VIP alias",
+      card_pizero_vip:     "VRRP role",
+      val_pizero_vrrp:     "BACKUP · prio 100",
       card_pizero_uptime:  "Uptime",
       card_pizero_policy:  "Policy",
       card_pizero_systemd: "systemd",
-      hint_pizero_vip:     "DNS :53 only · admin UI always at the Pi Zero IP",
+      hint_pizero_vip:     "takes VIP <VIP> only if the dns-ha VM fails · admin UI always at the Pi Zero IP",
 
       card_primary_host:      "Host",
       card_primary_weight:    "Order",
@@ -212,7 +214,7 @@
 
       flow_f1_sub:   "Client queries",
       flow_health:   "health-check · 5 s · primary 4 fails = down",
-      flow_caption:  "FritzBox DHCP pushes the VIP as DNS → Pi Zero dnsdist routes to the primary while healthy, else the fallback",
+      flow_caption:  "FritzBox DHCP pushes the VIP as DNS → dnsdist behind the VIP (via keepalived, normally on the dns-ha VM) routes to the primary while healthy, else the fallback",
       node_clients:  "Clients · FritzBox",
       node_primary:  "Primary · Server",
       node_fallback: "Fallback · Pi Zero FTL",
@@ -260,7 +262,7 @@
 
 
       svg_title: "Pi-hole DNS failover architecture",
-      svg_desc:  "Clients send DNS queries to Pi Zero dnsdist (the VIP). dnsdist uses the firstAvailable policy: it sends queries to the primary Pi-hole on the server (order 1) as long as its health-check passes, and falls back to the local Pi Zero FTL instance (order 2) otherwise. Health-check every 5 seconds; the primary is marked down after 4 consecutive failures, the fallback after 2.",
+      svg_desc:  "Clients send DNS queries to the VIP; behind it runs dnsdist (via keepalived/VRRP normally on the dns-ha VM, on the Pi Zero if that fails — identical config on both nodes). dnsdist uses the firstAvailable policy: it sends queries to the primary Pi-hole on the server (order 1) as long as its health-check passes, and falls back to the local Pi Zero FTL instance (order 2) otherwise. Health-check every 5 seconds; the primary is marked down after 4 consecutive failures, the fallback after 2.",
     },
   };
 

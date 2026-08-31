@@ -152,8 +152,8 @@
         </header>
         <dl class="flow-card__rows">
           <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_host">Host</dt><dd class="fcr__val">&lt;PIZERO_IP&gt;</dd></div>
-          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_vip">VIP-Alias</dt><dd class="fcr__val accent">&lt;VIP&gt;</dd></div>
-          <div class="fcr fcr--hint"><dd class="fcr__hint" data-i18n="hint_pizero_vip">nur DNS :53 · Admin-UI immer auf der Pi-Zero-IP</dd></div>
+          <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_vip">VRRP-Rolle</dt><dd class="fcr__val accent" data-i18n="val_pizero_vrrp">BACKUP · Prio 100</dd></div>
+          <div class="fcr fcr--hint"><dd class="fcr__hint" data-i18n="hint_pizero_vip">übernimmt die VIP &lt;VIP&gt; nur bei Ausfall der dns-ha-VM · Admin-UI immer auf der Pi-Zero-IP</dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_uptime">Uptime</dt><dd class="fcr__val"><span id="v-pizero-uptime">–</span></dd></div>
           <div class="fcr"><dt class="fcr__label" data-i18n="card_pizero_policy">Policy</dt><dd class="fcr__val">firstAvailable</dd></div>
         </dl>

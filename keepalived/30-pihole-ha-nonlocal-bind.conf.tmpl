@@ -1,0 +1,13 @@
+# pihole-ha: let dnsdist bind <VIP>:53 even when this node does not
+# currently hold the VIP (VRRP BACKUP state, or before keepalived has
+# assigned it). keepalived owns the VIP; this only permits the bind.
+#
+# Deploy target: /etc/sysctl.d/30-pihole-ha-nonlocal-bind.conf on BOTH nodes
+# (dns-ha VM + Pi Zero). Apply with `sudo sysctl --system`.
+#
+# NOTE: this was NOT verified against the live Pi during authoring. Confirm
+# during the deploy window whether dnsdist actually binds <VIP>:53 on the
+# BACKUP node (`ss -tulnp | grep ':53'`) and whether this sysctl is required
+# there at all — if dnsdist only ever binds 127.0.0.1:53 until VRRP hands it
+# the VIP, this drop-in is a harmless no-op.
+net.ipv4.ip_nonlocal_bind = 1

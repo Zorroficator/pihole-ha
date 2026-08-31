@@ -21,17 +21,17 @@ Ein einzelner Pi-hole ist im Heimnetz ein klassischer Single Point of Failure f�
 
 Zwei HA-Mechanismen greifen ineinander:
 
-- **`keepalived`** hält eine virtuelle IP (`<VIP>`) per VRRP zwischen dem Pi Zero und dem Docker-Host hoch verfügbar. Fällt einer der beiden Knoten aus, übernimmt der andere automatisch die VIP — die Clients merken vom Knotenwechsel selbst nichts.
-- **`dnsdist`** macht dahinter das eigentliche DNS-Failover zwischen dem primären und dem Fallback-Pi-hole: Queries gehen an das primäre Pi-hole, solange dessen Health-Check grün ist; bei Ausfall schaltet dnsdist automatisch auf das Fallback-Pi-hole um. Dieses Repo enthält die `dnsdist`-Konfiguration des Pi Zero; die des zweiten Knotens ist hier nicht enthalten.
+- **`keepalived`** hält eine virtuelle IP (`<VIP>`) per VRRP zwischen zwei VRRP-Knoten hoch verfügbar: die **dns-ha-VM** auf dem Docker-Host (MASTER, Priorität 150) hält die VIP im Normalbetrieb; der **Pi Zero** (BACKUP, Priorität 100) übernimmt sie nur, wenn dns-ha ausfällt. keepalived verwaltet die VIP exklusiv — es gibt keinen separaten Static-Bind-Dienst mehr. Die Clients merken vom Knotenwechsel selbst nichts.
+- **`dnsdist`** macht dahinter das eigentliche DNS-Failover zwischen dem primären und dem Fallback-Pi-hole: Queries gehen an das primäre Pi-hole, solange dessen Health-Check grün ist; bei Ausfall schaltet dnsdist automatisch auf das Fallback-Pi-hole um. **Beide** Knoten fahren eine identische `dnsdist`-Konfiguration (Primary `<SERVER_IP>:5301`, Fallback lokal `127.0.0.1:5353`); dieses Repo liefert beide mit (`dns_ha/` und `pi_zero/`).
 
 ```
 Clients → Router verteilt DNS <VIP>
           │
           ▼
-Pi Zero (<PIZERO_IP> + <VIP>/32 Alias)
-  └─ dnsdist :53
+<VIP> (VRRP: dns-ha-VM = MASTER im Normalbetrieb, Pi Zero = BACKUP)
+  └─ dnsdist :53   (identische Konfiguration auf beiden Knoten)
        ├─ primary  → <SERVER_IP>:5301 (Pi-hole im Docker-Container, order 1)
-       └─ fallback → 127.0.0.1:5353 (Pi-hole-FTL lokal auf Pi Zero, order 2)
+       └─ fallback → 127.0.0.1:5353 (Pi-hole-FTL lokal auf dem aktiven Knoten, order 2)
 
 Health-Check alle 5 s · Primary nach 4 Fehlversuchen in Folge down, Fallback nach 2 · Policy firstAvailable
 ```
@@ -57,12 +57,13 @@ flowchart TB
     class Fallback,Alert,Bot,Router warn;
 ```
 
-Warum der Pi Zero die VIP mit übernehmen kann und nicht dauerhaft nur der Docker-Host: bei manchen Docker-Netzwerk-Setups (hier: ein bekannter OrbStack-NAT-Bug) kommen Container-Antworten immer von der Host-Primary-IP statt vom VIP-Alias — deshalb hält der Pi Zero im Normalbetrieb die VIP, und `dnsdist` übernimmt das eigentliche Backend-Failover dahinter.
+Warum die VIP auf einer eigenen `dns-ha`-VM auf dem Docker-Host liegt und nicht auf dem Host selbst oder im Pi-hole-Container: bei manchen Docker-Netzwerk-Setups (hier: ein bekannter OrbStack-NAT-Bug) kommen Container-Antworten immer von der Host-Primary-IP statt vom VIP-Alias. Eine schlanke VM neben dem Container hat eine eigene Netz-Identität und ist davon nicht betroffen — sie läuft als VRRP-MASTER und hält die VIP im Normalbetrieb; der Pi Zero steht als BACKUP bereit, und `dnsdist` übernimmt das eigentliche Backend-Failover hinter der VIP auf dem jeweils aktiven Knoten.
 
 ## Komponenten
 
-- **Pi Zero** (`<PIZERO_IP>` + VIP `<VIP>`): dnsdist, Pi-hole-FTL (loopback :5353), Monitor, Health-Logger, Wartungs-Cron (`pihole -up` + Gravity), systemd-Units
-- **Docker-Host** (`<SERVER_IP>`): Pi-hole-Container, DNS-Heartbeat-LaunchAgent
+- **dns-ha-VM** (auf dem Docker-Host, VRRP-MASTER): keepalived + dnsdist — hält die VIP `<VIP>` im Normalbetrieb
+- **Pi Zero** (`<PIZERO_IP>`, VRRP-BACKUP): keepalived + dnsdist, Pi-hole-FTL (loopback :5353), Monitor, Health-Logger, Wartungs-Cron (`pihole -up` + Gravity), systemd-Units — übernimmt die VIP nur bei Ausfall von dns-ha
+- **Docker-Host** (`<SERVER_IP>`): Pi-hole-Container, DNS-Heartbeat-LaunchAgent und Host der dns-ha-VM
 - **Telegram-Bot** (optionale Erweiterung, nicht Teil dieses Repos): ein externer Bot für den Notfall-Reboot des Docker-Hosts, gehärtet via Sudoers/SSH-Key. Ersetzbar durch jeden anderen Fernzugriffsweg (SSH, Steckdosen-Reboot, etc.) — siehe Sicherheitshinweis unten.
 
 ## Recovery-Kette
@@ -106,6 +107,8 @@ Das Modell ist zweistufig: Die Config-/Template-Dateien werden über `render.sh`
 | `PIZERO_TAILSCALE_IP` | Tailscale-IP des Pi Zero (für SSH-Zugriff vom Docker-Host aus) |
 | `PI_USER` | SSH-Login-User auf dem Pi Zero (DietPi-Standard: `dietpi`) |
 | `DNS_HA_VM_IP` | IP des keepalived-MASTER-Knotens auf dem Docker-Host (bare metal oder VM) |
+| `SERVER_SSH_TARGET` | SSH-Ziel des Docker-Hosts, der die Multipass-VM betreibt (von `dns_ha/deploy.sh` genutzt) |
+| `DNS_HA_VM_NAME` | Multipass-Instanzname der dns-ha-VM (Ziel für `multipass exec`) |
 | `ROUTER_IP` | IP des Routers als DNS-Fallback der letzten Option |
 | `LAN_SUBNET` | Heimnetz-Subnetz in CIDR-Form für die dnsdist-ACL / Firewall-Notizen |
 | `VRRP_AUTH_PASS` | VRRP-Shared-Secret (keepalived kürzt auf 8 Zeichen, Klartext auf dem Draht) |
@@ -149,7 +152,12 @@ hinterlegt sind.
 # im Repo-Wurzelverzeichnis, auf dem Docker-Host
 docker compose up -d
 
-# Pi Zero
+# dns-ha-VM (VRRP-MASTER): dnsdist + keepalived + nonlocal-bind-sysctl, per
+#   ssh <SERVER_SSH_TARGET> "multipass exec <DNS_HA_VM_NAME> -- ..."
+# in die Multipass-VM eingespielt
+cd dns_ha && ./deploy.sh
+
+# Pi Zero (VRRP-BACKUP): dnsdist + keepalived + Monitor
 cd pi_zero && ./deploy.sh
 
 # Monitoring (Health-Logger + DNS-Heartbeat) auf beide Hosts
@@ -161,11 +169,11 @@ cd pi_zero && ./deploy.sh
 # alle 60 s laufen lassen (schreibt data.json + history.json nach ~/www/dash_pihole/)
 ```
 
-`pi_zero/deploy.sh` und `deploy_monitoring.sh` rufen `render.sh` inzwischen selbst auf — `config.env` muss also vorher ausgefüllt sein.
+`dns_ha/deploy.sh`, `pi_zero/deploy.sh` und `deploy_monitoring.sh` rufen `render.sh` inzwischen selbst auf — `config.env` muss also vorher ausgefüllt sein.
 
 ## Runbooks
 
-Setup: `pi_zero/deploy.sh`. Status-/Health-Checks der dnsdist-Backends: `pi_zero/pihole_monitor.py`. DNS-Heartbeat auf dem Docker-Host: `server/pihole_heartbeat.sh`. Dashboard-Datensammlung: `server/dashboard_collector.py`.
+Setup: `dns_ha/deploy.sh` (MASTER-Knoten) und `pi_zero/deploy.sh` (BACKUP-Knoten). Status-/Health-Checks der dnsdist-Backends: `pi_zero/pihole_monitor.py`. DNS-Heartbeat auf dem Docker-Host: `server/pihole_heartbeat.sh`. Dashboard-Datensammlung: `server/dashboard_collector.py`.
 
 ## Sicherheitshinweis
 

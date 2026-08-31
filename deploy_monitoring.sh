@@ -21,14 +21,15 @@ set -a; . "$ROOT/config.env"; set +a
 
 SERVER="${SERVER:-$SERVER_IP}"
 PIZERO="${PIZERO:-$PIZERO_IP}"
+PI_USER="${PI_USER:-dietpi}"
 
 echo "═══ 1) Pi Zero: pi_health_logger.sh ═══"
-ssh "dietpi@$PIZERO" "mkdir -p ~/scripts ~/data/pi_health"
-scp pi_zero/pi_health_logger.sh "dietpi@$PIZERO:~/scripts/"
-ssh "dietpi@$PIZERO" "chmod +x ~/scripts/pi_health_logger.sh"
+ssh "${PI_USER}@$PIZERO" "mkdir -p ~/scripts ~/data/pi_health"
+scp pi_zero/pi_health_logger.sh "${PI_USER}@$PIZERO:~/scripts/"
+ssh "${PI_USER}@$PIZERO" "chmod +x ~/scripts/pi_health_logger.sh"
 
 echo "→ Adding to crontab (backup at ~/data/pi_health/crontab.bak-s1)"
-ssh "dietpi@$PIZERO" '
+ssh "${PI_USER}@$PIZERO" '
   crontab -l > ~/data/pi_health/crontab.bak-s1 2>/dev/null || true
   ( crontab -l 2>/dev/null | grep -v "pi_health_logger.sh"
     echo "@reboot sleep 60 && /home/dietpi/scripts/pi_health_logger.sh boot"
@@ -38,7 +39,7 @@ ssh "dietpi@$PIZERO" '
 '
 
 echo "→ Writing a boot record right away"
-ssh "dietpi@$PIZERO" '~/scripts/pi_health_logger.sh boot && tail -1 ~/data/pi_health/health.jsonl'
+ssh "${PI_USER}@$PIZERO" '~/scripts/pi_health_logger.sh boot && tail -1 ~/data/pi_health/health.jsonl'
 
 echo
 echo "═══ 2) Server: pihole_heartbeat.sh ═══"
@@ -65,5 +66,5 @@ ssh "$SERVER" '
 
 echo
 echo "✓ Done. Check later:"
-echo "  Pi:     ssh dietpi@$PIZERO 'tail ~/data/pi_health/health.jsonl'"
+echo "  Pi:     ssh ${PI_USER}@$PIZERO 'tail ~/data/pi_health/health.jsonl'"
 echo "  Server: ssh $SERVER 'tail ~/data/pihole_heartbeat/heartbeat.log'"
