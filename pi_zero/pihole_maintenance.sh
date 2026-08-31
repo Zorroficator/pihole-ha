@@ -14,20 +14,21 @@
 # Does weekly:
 #   1. pihole -up           — update Pi-hole Core/Web/FTL to the latest version
 #   2. pihole updateGravity — rebuild blocklists
-# Fail-only Telegram via mod_telegram wrapper; details in the log.
+# Fail-only Telegram via /usr/local/lib/pihole-ha/telegram-send.sh; details in the log.
 set -u
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 LOG_DIR="/var/log/pihole-ha"
 LOG="$LOG_DIR/pihole-maintenance.log"
-TG="/home/dietpi/scripts/telegram_notify.sh"
+SENDER="/usr/local/lib/pihole-ha/telegram-send.sh"
 mkdir -p "$LOG_DIR"
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 notify_fail() {
-    # Best-effort: run wrapper as dietpi (credential file must be resolvable for that user)
-    [[ -x "$TG" ]] && runuser -u dietpi -- "$TG" "Pi Zero pihole-maintenance: $1" error >/dev/null 2>&1 || true
+    # Runs as root (cron.weekly); the sender reads /etc/telegram-notify.conf,
+    # which root can read — no runuser needed.
+    [[ -x "$SENDER" ]] && "$SENDER" "Pi Zero pihole-maintenance: $1" error || true
 }
 
 log "════ pihole-maintenance start ════"

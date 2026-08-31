@@ -14,6 +14,12 @@ Data sources:
     - systemctl is-active     → Telegram bot online status + dnsdist uptime
   Server host (local):
     - ~/data/pihole-ha/update.log → last update run
+
+Telegram alerts go through the repo-tracked sender bin/telegram-send.sh. This
+collector is not shipped by any deploy script — place it on the Docker host
+yourself. It expects the sender at ~/projects/pihole-ha/server/telegram-send.sh
+(alongside pihole_heartbeat.sh, where deploy_monitoring.sh scp's it) and the
+credentials at ~/.config/pihole-ha/telegram.conf (override via PIHOLE_HA_TG_CONF).
 """
 import json
 import logging
@@ -35,7 +41,7 @@ HISTORY_OUT = Path.home() / "www" / "dash_pihole" / "history.json"
 UPDATE_LOG  = Path.home() / "data" / "pihole-ha" / "update.log"
 STATE_DIR   = Path.home() / "data" / "pihole-ha"
 ALERT_FILE  = STATE_DIR / "alert_state.json"
-TELEGRAM    = Path.home() / "scripts" / "telegram_notify.sh"
+TELEGRAM    = Path.home() / "projects" / "pihole-ha" / "server" / "telegram-send.sh"
 
 PRIMARY_DOWN_THRESHOLD = 3  # cycles × 60 s → Telegram warning
 
@@ -202,8 +208,18 @@ def _write_alert(state: dict) -> None:
 
 
 def _telegram(level: str, text: str) -> None:
+    env = {
+        **os.environ,
+        "PIHOLE_HA_TG_CONF": os.environ.get(
+            "PIHOLE_HA_TG_CONF",
+            str(Path.home() / ".config" / "pihole-ha" / "telegram.conf"),
+        ),
+    }
     try:
-        subprocess.run([str(TELEGRAM), text, level], capture_output=True, timeout=10)
+        subprocess.run(
+            [str(TELEGRAM), text, level],
+            capture_output=True, timeout=10, env=env,
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         log.warning("Telegram notify failed: %s", str(e)[:200])
 

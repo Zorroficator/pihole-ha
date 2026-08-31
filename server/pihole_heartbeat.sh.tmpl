@@ -40,19 +40,17 @@ fi
 [[ "$fails" =~ ^[0-9]+$ ]] || fails=0
 [[ "$status" == "up" || "$status" == "down" ]] || status="up"
 
-# ── Telegram via mod_Telegram_Info (msg via ENV, avoids escaping) ───────────
+# ── Telegram via the repo-tracked sender (scp'd next to this script) ────────
 send_telegram() {
-    export HB_MSG="$1" HB_LEVEL="$2"
-    python3 - <<'PY'
-import os, sys
-sys.path.insert(0, os.path.expanduser("~/projects/mod_Telegram_Info"))
-try:
-    import mod_telegram
-    mod_telegram.send(os.environ["HB_MSG"], level=os.environ["HB_LEVEL"])
-except Exception as e:
-    print(f"Telegram send failed: {e}", file=sys.stderr)
-    sys.exit(1)
-PY
+    local SENDER
+    SENDER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-send.sh"
+    if [[ ! -x "$SENDER" ]]; then
+        echo "heartbeat: telegram-send.sh not found at $SENDER" >&2
+        return 0
+    fi
+    # Docker host is a Mac with a user LaunchAgent — no /etc/telegram-notify.conf.
+    export PIHOLE_HA_TG_CONF="${PIHOLE_HA_TG_CONF:-$HOME/.config/pihole-ha/telegram.conf}"
+    "$SENDER" "$1" "$2" || true
 }
 
 # ── Functional DNS check via the VIP ─────────────────────────────────────────

@@ -2,6 +2,9 @@
 """
 pihole_monitor.py — dnsdist backend monitor with rich Telegram alerts.
 
+Alerts are delivered via the repo-tracked bin/telegram-send.sh sender
+(installed next to this script in /usr/local/lib/pihole-ha/ by deploy.sh).
+
 Architecture (option A, 2026-04-18):
     Clients → VIP <VIP>:53 → dnsdist →
         [primary]  <SERVER_IP>:5301  (server Pi-hole via OrbStack, compose 5301:53)
@@ -44,12 +47,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
-try:
-    import mod_telegram
-except ImportError:
-    print("mod_telegram not importable — Telegram alerts disabled", file=sys.stderr)
-    mod_telegram = None  # type: ignore[assignment]
 
 
 CONFIG_PATH = Path(__file__).parent / "monitor_config.toml"
@@ -212,15 +209,31 @@ def vip_resolves(vip: str, domain: str) -> bool:
 # ─────────────────────────── Telegram-Alerts ─────────────────────────────
 
 
+def _sender_path() -> Path:
+    """Locate telegram-send.sh: next to this script first, then the install dir."""
+    local = Path(__file__).with_name("telegram-send.sh")
+    if local.exists():
+        return local
+    return Path("/usr/local/lib/pihole-ha/telegram-send.sh")
+
+
 def _tg(text: str, level: str = "info") -> None:
-    """Telegram wrapper (no-op if mod_telegram is missing)."""
-    if mod_telegram is None:
-        logging.info("[TG %s] %s", level, text.replace("\n", " | "))
-        return
+    """Send a Telegram alert via bin/telegram-send.sh. Never raises."""
+    sender = _sender_path()
     try:
-        mod_telegram.send(text, level=level)
-    except Exception:
-        logging.exception("Telegram send failed")
+        result = subprocess.run(
+            [str(sender), text, level],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            logging.warning(
+                "telegram-send exited %s: %s",
+                result.returncode, (result.stderr or "").strip()[:200],
+            )
+    except FileNotFoundError:
+        logging.warning("telegram-send.sh not found at %s — alert dropped", sender)
+    except subprocess.TimeoutExpired:
+        logging.warning("telegram-send.sh timed out — alert dropped")
 
 
 def alert_primary_down(snap: BackendSnapshot) -> None:

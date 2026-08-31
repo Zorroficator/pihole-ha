@@ -116,6 +116,33 @@ Jeder Schlüssel trägt in `config.env.example` einen einzeiligen Kommentar.
 
 Code und Config des Failover-Monitors werden nach `/usr/local/lib/pihole-ha/` (root-owned) installiert — Poll-Intervall, VIP oder Test-Domain dort zu ändern erfordert sudo.
 
+### Telegram-Alarme
+
+Alle Komponenten verschicken Alarme über ein einziges Skript, `bin/telegram-send.sh`.
+Es liest die Bot-Zugangsdaten aus einer Conf-Datei, die **nicht** in diesem Repo
+liegt — eine Shell-Datei mit zwei Zeilen:
+
+```
+TELEGRAM_TOKEN=<bot token>
+TELEGRAM_CHAT_ID=<chat id>
+```
+
+- **Pi Zero:** `/etc/telegram-notify.conf` (Modus 600, root — gemeinsam mit dem
+  keepalived-VRRP-Notifier). `pihole_monitor.py` läuft als unprivilegierter
+  `dietpi`-User, die Datei muss also für diesen User lesbar sein: entweder
+  `chmod 644` oder `chown root:dietpi && chmod 640`. `pihole_maintenance.sh`
+  läuft als root und liest dieselbe Datei direkt. `pi_zero/deploy.sh`
+  installiert den Sender nach `/usr/local/lib/pihole-ha/telegram-send.sh`.
+- **Docker-Host:** `~/.config/pihole-ha/telegram.conf` für den User, der die
+  Heartbeat-/Collector-LaunchAgents ausführt. `deploy_monitoring.sh` legt das
+  Verzeichnis an und liefert den Sender neben `pihole_heartbeat.sh` mit; die
+  Conf legst du selbst dort ab.
+- Den Conf-Pfad überall per Umgebungsvariable `PIHOLE_HA_TG_CONF` überschreiben.
+
+Eine fehlende oder leere Conf ist unkritisch: der Sender loggt nach stderr und
+beendet sich mit Exit 0 — Alarmierung bleibt einfach aus, bis Zugangsdaten
+hinterlegt sind.
+
 ## Deploy
 
 ```bash

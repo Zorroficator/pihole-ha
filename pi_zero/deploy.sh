@@ -2,8 +2,12 @@
 # deploy.sh — Rolls out dnsdist + monitor + VIP-bind on the Pi Zero (via Tailscale)
 #
 # Prerequisites on Pi Zero (one-time, manual):
-#   1. A local Telegram notify credential file must exist
-#      (path/format see keepalived/notify_telegram.sh or the respective script).
+#   1. /etc/telegram-notify.conf must exist (shared with the keepalived
+#      notifier), format:
+#          TELEGRAM_TOKEN=123456:AA...
+#          TELEGRAM_CHAT_ID=-1001234567890
+#      The monitor runs as the unprivileged 'dietpi' user, so the file must be
+#      readable by it: either `chmod 644` or `chown root:dietpi && chmod 640`.
 #   2. passwordless sudo for 'ip addr add/del' + 'arping' — see section below
 set -euo pipefail
 
@@ -33,6 +37,7 @@ scp dnsdist.conf \
     pihole-vip-bind.sh \
     pihole-vip.service \
     pihole_maintenance.sh \
+    ../bin/telegram-send.sh \
     "${PI_HOST}:${REMOTE_DIR}/"
 
 echo "→ Installing dnsdist.conf"
@@ -47,12 +52,13 @@ ssh "$PI_HOST" "sudo install -m 644 -o root -g root ${REMOTE_DIR}/pihole-vip.ser
                  sudo install -d -m 755 -o root -g root /usr/local/lib/pihole-ha && \
                  sudo install -m 755 -o root -g root ${REMOTE_DIR}/pihole_monitor.py /usr/local/lib/pihole-ha/pihole_monitor.py && \
                  sudo install -m 644 -o root -g root ${REMOTE_DIR}/monitor_config.toml /usr/local/lib/pihole-ha/monitor_config.toml && \
+                 sudo install -m 755 -o root -g root ${REMOTE_DIR}/telegram-send.sh /usr/local/lib/pihole-ha/telegram-send.sh && \
                  sudo systemctl daemon-reload"
 
 # Keep exactly one live copy of the monitor code + config (root-owned
 # /usr/local/lib/pihole-ha/); drop the staging copies under the dietpi-writable
 # REMOTE_DIR so they can't diverge.
-ssh "$PI_HOST" "rm -f ${REMOTE_DIR}/pihole_monitor.py ${REMOTE_DIR}/monitor_config.toml"
+ssh "$PI_HOST" "rm -f ${REMOTE_DIR}/pihole_monitor.py ${REMOTE_DIR}/monitor_config.toml ${REMOTE_DIR}/telegram-send.sh"
 
 echo
 echo "===== NEXT STEPS (manual) ====="

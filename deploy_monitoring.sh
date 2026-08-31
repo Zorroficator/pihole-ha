@@ -42,12 +42,13 @@ ssh "dietpi@$PIZERO" '~/scripts/pi_health_logger.sh boot && tail -1 ~/data/pi_he
 
 echo
 echo "═══ 2) Server: pihole_heartbeat.sh ═══"
-ssh "$SERVER" "mkdir -p ~/projects/pihole-ha/server ~/data/pihole_heartbeat"
-scp server/pihole_heartbeat.sh server/local.pihole-heartbeat.plist \
+ssh "$SERVER" "mkdir -p ~/projects/pihole-ha/server ~/data/pihole_heartbeat ~/.config/pihole-ha"
+scp server/pihole_heartbeat.sh server/local.pihole-heartbeat.plist bin/telegram-send.sh \
     "$SERVER:~/projects/pihole-ha/server/"
 
 echo "→ Installing LaunchAgent (user, no sudo)"
 ssh "$SERVER" '
+  chmod +x ~/projects/pihole-ha/server/telegram-send.sh
   mkdir -p ~/Library/LaunchAgents
   sed "s|/Users/YOUR_USERNAME|$HOME|g" \
       ~/projects/pihole-ha/server/local.pihole-heartbeat.plist \
