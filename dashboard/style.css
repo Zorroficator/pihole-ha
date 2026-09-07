@@ -13,6 +13,7 @@
   --text:          #c8d8f0;
   --text-dim:      rgba(200, 216, 240, 0.55);    /* 0.45 → 0.55, mehr als 3:1 auf --bg */
   --text-faint:    rgba(200, 216, 240, 0.4);     /* 0.25 → 0.4, grenzwertig aber nur dekorativ */
+  --text-dim-aa:   #707A8B;                       /* de-emphasised body text that still clears WCAG-AA 4.5:1 on --bg (~4.6:1) */
   --border:        rgba(255, 255, 255, 0.05);
   --border-strong: rgba(255, 255, 255, 0.1);
   --card-bg:       rgba(255, 255, 255, 0.025);
@@ -278,7 +279,7 @@ body {
 .sb-dot--update   { background: var(--c-fallback); box-shadow: 0 0 6px var(--c-fallback); }
 
 .sb-val--pizero   { color: var(--c-pizero); }
-.sb-val--primary  { color: var(--c-primary); }
+.sb-val--primary  { color: var(--c-primary-text); }
 .sb-val--fallback { color: var(--c-fallback); }
 .sb-val--bot  { color: var(--c-bot); }
 .sb-val--update   { color: var(--c-fallback); }
@@ -606,7 +607,7 @@ body {
 .recovery-node__meta {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--text-dim-aa);
   letter-spacing: 0.02em;
   margin-top: 2px;
 }
@@ -900,11 +901,11 @@ body {
 }
 .event-row__msg    { color: var(--text); word-break: break-word; }
 .event-row__delta  { color: var(--text-dim); font-size: 11px; text-align: right; }
-.event-row__src    { color: var(--text-faint); font-size: 10.5px; letter-spacing: 0.04em; }
+.event-row__src    { color: var(--text-dim-aa); font-size: 10.5px; letter-spacing: 0.04em; }
 
 .event-row--failover    .event-row__type { color: var(--c-down); }
 .event-row--recovery    .event-row__type { color: var(--c-active); }
-.event-row--update      .event-row__type { color: var(--c-primary); }
+.event-row--update      .event-row__type { color: var(--c-primary-text); }
 .event-row--telegram    .event-row__type { color: var(--c-warn); }
 .event-row--healthcheck .event-row__type { color: var(--c-pizero); }
 .event-row--reboot      .event-row__type { color: var(--c-fallback); }
@@ -958,7 +959,7 @@ body {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
-  color: var(--text-dim);
+  color: var(--text);
   opacity: 0.7;
 }
 .site-footer__sep { color: var(--text-faint); }

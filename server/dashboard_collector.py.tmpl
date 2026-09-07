@@ -341,7 +341,10 @@ def assemble(pizero: dict | None) -> dict:
             "audit_count_30d": pizero.get("telegram_bot_audit_30d", 0),
         }
     else:
-        bot = {"state": "offline", "last_contact_s": None, "audit_count_30d": None}
+        # Collection failed entirely — the bot may well be running, we just could
+        # not reach the Pi Zero to check. Report "unknown", never "offline"
+        # (mirrors the dnsdist branch above).
+        bot = {"state": "unknown", "last_contact_s": None, "audit_count_30d": None}
 
     # update
     upd = parse_update_log()

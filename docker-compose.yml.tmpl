@@ -1,7 +1,9 @@
 services:
   pihole:
     container_name: pihole-ha
-    image: pihole/pihole:latest
+    # Pin to v6: the FTLCONF_* env vars below are v6-only; v5 silently ignores
+    # them and would boot a container with no admin password.
+    image: pihole/pihole:v6
     hostname: pihole-ha
     # Note: dnsdist runs on port 53 on the Pi-Zero node (see pi_zero/dnsdist.conf) —
     # Pi-hole here has to listen on a different port behind it, hence 5301 instead of 53.

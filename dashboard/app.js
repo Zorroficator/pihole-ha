@@ -104,6 +104,7 @@
 
       state_online_ready:   "online · bereit",
       state_offline:        "offline",
+      state_unknown:        "unbekannt",
       recovery_last_contact:"letzter Kontakt · {age}",
       recovery_emergency:   "Notfall-Reboot",
       recovery_reboot:      "-Reboot",
@@ -229,6 +230,7 @@
 
       state_online_ready:   "online · ready",
       state_offline:        "offline",
+      state_unknown:        "unknown",
       recovery_last_contact:"last contact · {age}",
       recovery_emergency:   "emergency reboot",
       recovery_reboot:      " reboot",
@@ -363,6 +365,32 @@
     return { data: null, isDemo: false };
   }
 
+  // Demo path only: the bundled sample files carry timestamps frozen at authoring
+  // time, so a static deploy would show every event as months old. Rather than
+  // editing the JSON on every release, we re-anchor it at load: shift every ISO
+  // timestamp by the same delta that moves the sample's own `ts` onto "now",
+  // which keeps the relative spacing between events intact and never drifts,
+  // because it is recomputed from scratch on each tick.
+  const ISO_TS_RE =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+  function shiftDemoTimestamps(node, shiftMs) {
+    if (Array.isArray(node)) {
+      node.forEach((item) => shiftDemoTimestamps(item, shiftMs));
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    for (const key of Object.keys(node)) {
+      const val = node[key];
+      if (typeof val === "string" && ISO_TS_RE.test(val)) {
+        const t = new Date(val).getTime();
+        if (!Number.isNaN(t)) node[key] = new Date(t + shiftMs).toISOString();
+      } else if (val && typeof val === "object") {
+        shiftDemoTimestamps(val, shiftMs);
+      }
+    }
+  }
+
   function fmtRelative(iso, lang) {
     if (!iso) return null;
     const then = new Date(iso).getTime();
@@ -437,7 +465,12 @@
     setText("#sb-fallback-state", fbLabel);
 
     const ot = data.bot || {};
-    setText("#sb-bot-state", ot.state === "online" ? "ok" : t("state_offline"));
+    setText(
+      "#sb-bot-state",
+      ot.state === "online"  ? "ok"
+      : ot.state === "unknown" ? "–"
+      :                        t("state_offline"),
+    );
 
     const upd = data.update || {};
     const rel = fmtRelative(upd.last_run_ts, lang);
@@ -492,7 +525,9 @@
     const ot = data.bot || {};
     setText(
       "#card-bot-badge",
-      ot.state === "online" ? t("badge_online") : t("badge_offline"),
+      ot.state === "online"  ? t("badge_online")
+      : ot.state === "unknown" ? t("badge_unknown")
+      :                        t("badge_offline"),
     );
     setText("#v-bot-contact", ot.last_contact_s != null ? fmtDuration(ot.last_contact_s) : "–");
     setText("#v-bot-audit", ot.audit_count_30d != null ? `${ot.audit_count_30d} · 30d` : "–");
@@ -627,9 +662,13 @@
 
     const ot = (data && data.bot) || {};
     const online = !stale && ot.state === "online";
+    const unknown = ot.state === "unknown";
 
     if (stateSpan) {
-      stateSpan.textContent = online ? t("state_online_ready") : t("state_offline");
+      stateSpan.textContent =
+        online ? t("state_online_ready")
+        : unknown ? t("state_unknown")
+        : t("state_offline");
     }
     if (botDot) {
       botDot.style.background   = online ? "var(--c-fallback)" : "var(--c-warn)";
@@ -767,7 +806,7 @@
     }
 
     const ot = data.bot || {};
-    if (ot.state !== "online") {
+    if (ot.state !== "online" && ot.state !== "unknown") {
       sbDotBot && sbDotBot.classList.add("is-warn");
     }
 
@@ -805,9 +844,18 @@
     const data    = dataRes.data;
     const history = histRes.data;
 
-    // Demo mode (data.json unreachable, e.g. a static GitHub Pages deploy
-    // with no live collector): the sample timestamp is fixed, so the normal
-    // staleness check would always trip and make the demo look broken.
+    // Demo mode (data.json unreachable, e.g. a static GitHub Pages deploy with no
+    // live collector): re-anchor the frozen sample timestamps onto "now" so the
+    // board shows fresh relative times instead of looking abandoned. History is
+    // only shifted when it too came from the sample file, using the same delta.
+    if (dataRes.isDemo && data && data.ts) {
+      const shiftMs = Date.now() - new Date(data.ts).getTime();
+      shiftDemoTimestamps(data, shiftMs);
+      if (histRes.isDemo && history) shiftDemoTimestamps(history, shiftMs);
+    }
+
+    // Demo mode has no live collector, so the staleness check (which would
+    // otherwise always trip on demo data) is skipped.
     const stale = dataRes.isDemo ? false : isStale(data);
     document.documentElement.classList.toggle("is-stale", stale);
 
